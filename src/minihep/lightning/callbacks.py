@@ -31,7 +31,9 @@ class Checkpoint(ModelCheckpoint):
 
     def setup(self, trainer: Trainer, pl_module: LightningModule, stage: str) -> None:
         super().setup(trainer, pl_module, stage)
-        if stage == "fit" and not trainer.fast_dev_run:
+        # Every stage, not just fit: `test` restores this callback's state from the checkpoint, and Lightning
+        # warns ("The dirpath has changed...") if the path it saved differs from the default.
+        if not trainer.fast_dev_run:
             self.dirpath = str(Path(trainer.default_root_dir) / "ckpts")
 
 

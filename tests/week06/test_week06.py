@@ -85,6 +85,17 @@ def test_costs_recover_a_permutation():
         assert torch.equal(permute_outputs(logits, idx), (true * 2 - 1) * 10), name
 
 
+@pytest.mark.parametrize("name", ["mask_bce", "mask_focal", "mask_dice"])
+def test_costs_stay_float32_under_autocast(name):
+    """Mixed precision must not reach the matching costs: autocast would run their einsums in bf16."""
+    logits, targets, valid = _mask_problem(q=32, t=32, n=200)
+    expected = L.COST_FNS[name](logits, targets, valid)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        cost = L.COST_FNS[name](logits, targets, valid)
+    assert cost.dtype == torch.float32
+    assert torch.allclose(cost, expected)
+
+
 # ----------------------------------------------------------------------------- losses
 
 

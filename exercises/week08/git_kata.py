@@ -77,11 +77,11 @@ def setup_bisect(repo: Path) -> None:
         f"""Repository ready at {repo}. Somewhere in the last 24 commits the window lost its edge.
 test_masks.py (untracked) passes on the first commit and fails on HEAD.
 
-1. cd {repo} && python test_masks.py               -> AssertionError
+1. cd {repo} && python3 test_masks.py              -> AssertionError
 2. git bisect start HEAD $(git rev-list --max-parents=0 HEAD)
-3. git bisect run python test_masks.py              -> git finds the first bad commit for you
+3. git bisect run python3 test_masks.py            -> git finds the first bad commit for you
 4. git bisect reset
-5. python {Path(__file__).resolve()} check-bisect {repo} <sha>"""
+5. python3 {Path(__file__).resolve()} check-bisect {repo} <sha>"""
     )
 
 
@@ -94,19 +94,26 @@ def check_bisect(repo: Path, sha: str) -> None:
         sys.exit(1)
 
 
+MODEL_V1 = """DIM = 128
+NUM_LAYERS = 4
+NUM_HEADS = 8
+"""
+
+
 def setup_upstream(root: Path) -> None:
     upstream = root / "upstream.git"
     root.mkdir(parents=True, exist_ok=False)
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(upstream)], check=True)
     work = root / "maintainer"
     subprocess.run(["git", "clone", "-q", str(upstream), str(work)], check=True, capture_output=True)
-    commit(work, "initial model", {"model.py": "DIM = 128\n"})
+    commit(work, "initial model", {"model.py": MODEL_V1})
     git(work, "push", "-q", "origin", "main")
     fork = root / "fork.git"
     subprocess.run(["git", "clone", "-q", "--bare", str(upstream), str(fork)], check=True)
     mine = root / "mine"
     subprocess.run(["git", "clone", "-q", str(fork), str(mine)], check=True, capture_output=True)
-    commit(work, "upstream: add window size", {"model.py": "DIM = 128\nWINDOW = 512\n"})
+    # Upstream edits the top of the file and you append at the bottom, so the rebase applies cleanly.
+    commit(work, "upstream: widen the model", {"model.py": MODEL_V1.replace("DIM = 128", "DIM = 256")})
     git(work, "push", "-q", "origin", "main")
     print(
         f"""Ready at {root}: upstream.git (Sam's repo), fork.git (your GitHub fork), mine (your clone of the fork).
@@ -127,7 +134,7 @@ def main() -> None:
     if len(sys.argv) < 3:
         print(__doc__)
         sys.exit(1)
-    command, path = sys.argv[1], Path(sys.argv[2])
+    command, path = sys.argv[1], Path(sys.argv[2]).resolve()  # absolute, so the printed steps work after `cd`
     if command == "conflict":
         setup_conflict(path)
     elif command == "bisect":

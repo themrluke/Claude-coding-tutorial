@@ -195,3 +195,6 @@ def test_comet_logger_offline(tmp_path):
     logger = CometLogger(name="offline-test", project="minihep", offline_directory=str(tmp_path), online=False)
     logger.log_metrics({"val/loss": 1.0}, step=0)
     assert type(logger.experiment).__name__ == "OfflineExperiment"
+    # A disabled experiment is also an OfflineExperiment, so check that something was actually recorded.
+    logger.experiment.end()
+    assert list(tmp_path.glob("*.zip")), "offline run wrote no archive (is the experiment disabled?)"

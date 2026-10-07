@@ -39,7 +39,7 @@ Each week: read the vault lesson (~1 h), do the exercises until `pixi run week N
    ```
 3. **Clone and install** (keep the repo inside the Linux filesystem, e.g. `~/code`, not `/mnt/c`; it is much faster):
    ```bash
-   git clone git@github.com:themrluke/hepattn-course.git ~/code/hepattn-course
+   git clone git@github.com:themrluke/Claude-coding-tutorial.git ~/code/hepattn-course
    cd ~/code/hepattn-course
    pixi install --locked          # exactly the versions in pixi.lock
    pixi run gpu-check             # torch version, True, your GPU's name
@@ -51,6 +51,24 @@ Each week: read the vault lesson (~1 h), do the exercises until `pixi run week N
    (`code .`) and pick the interpreter `.pixi/envs/default/bin/python`.
 5. **Notebooks:** `pixi run lab` and open the URL it prints, or open the `.ipynb` in VS Code with the same interpreter.
 6. **Pre-commit hooks** (format and lint on every commit, like hepattn): `pixi run pre-commit install`.
+
+### GPUs
+
+Everything runs on any CUDA GPU from the last few generations; the course was planned for an
+**RTX 4070 Ti** (Ada, 12 GB) and an **RTX 3050 Ti Laptop** (Ampere, 4 GB). Both support bf16,
+`torch.compile`/Triton, FlexAttention and FlashAttention-2 (the `fa2` environment).
+
+* Needs a recent Windows NVIDIA driver (CUDA 12.8 support, i.e. driver 570 or newer). Check the
+  "CUDA Version" in the top right of `nvidia-smi` inside WSL.
+* Where the GPU is used: the notebooks pick `cuda` automatically for training (weeks 3, 4, 6, 8),
+  the week 5 kernel benchmark and week 8's mixed-precision and profiling sections; the week 7 CLI
+  runs use `accelerator: auto`. Tests marked `gpu`/`flash` run on the GPU when there is one and
+  skip otherwise; the rest of the tests are deliberately small CPU tests so they run in seconds.
+* On the 4 GB laptop GPU everything in the course fits. If you push the week 5 benchmark beyond
+  its default sizes or enlarge the models, close other GPU programs first; on an out-of-memory
+  error halve the size.
+* The 4070 Ti is the better machine for the benchmark and training notebooks; the laptop is fine
+  for exercises and tests.
 
 ## How the exercises work
 

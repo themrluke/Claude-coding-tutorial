@@ -39,3 +39,13 @@ class CometLogger(_CometLogger):
             mode=mode,
             log_env_details=log_env_details,
         )
+
+    def _create_experiment(self) -> None:
+        # Lightning 2.5.2 turns ``online=False`` into ``ExperimentConfig(disabled=True)``, so an offline run
+        # silently records nothing and writes no archive. Rebuild the config without that flag. (hepattn's
+        # MyCometLogger pins the same Lightning and has the same problem.)
+        if self._online is False:
+            import comet_ml
+
+            self._comet_config = comet_ml.ExperimentConfig(**self._kwargs)
+        super()._create_experiment()

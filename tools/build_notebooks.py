@@ -376,6 +376,15 @@ NOTEBOOKS["week04_transformer_filter.ipynb"] = nb(
 
 Same task as last week, but every hit can now attend to every other hit. Compare with the MLP, then look
 inside the attention.
+
+Two things to know before you run it:
+- **The transformer's loss sits on a plateau** at the MLP's level for the first ~6,000 steps, then drops
+  sharply once attention learns to use the other hits on the track. Stop at 3,000 steps and the two models
+  look identical; that is why this cell trains for 10,000 (about 2 minutes on a GPU).
+- **At a 0.5 threshold both filters keep almost every hit** (with `pos_weight` the classifier leans towards
+  "keep"), so recall/precision at one threshold can hide a big difference. The ROC AUC does not need a
+  threshold: it is the probability that a random hit on a valid particle scores higher than a random other
+  hit (0.5 = guessing, 1 = perfect).
 """,
         ),
         ("code", SETUP),
@@ -405,7 +414,23 @@ def make_filter(encoder: bool, dim=64):
     task = HitFilterTask("hit_filter", "hit", "on_valid_particle", dim)
     return HitFilter(nn.ModuleList([net]), nn.ModuleList([task]), encoder=enc, input_sort_field="phi")
 
-steps = 300 if FAST else 3000
+@torch.no_grad()
+def roc_auc(model):
+    # P(a random positive hit scores above a random negative one), from the ranks of all val probabilities
+    model.eval()
+    probs, labels = [], []
+    for i in range(len(val_ds)):
+        inputs, targets = val_ds[i]
+        outputs = model({k: v.to(DEVICE) for k, v in inputs.items()})
+        probs.append(outputs["final"]["hit_filter"]["hit_logit"][0].sigmoid().cpu())
+        labels.append(targets["hit_on_valid_particle"][0])
+    model.train()
+    p, t = torch.cat(probs), torch.cat(labels)
+    ranks = p.argsort().argsort().double() + 1
+    num_pos, num_neg = t.sum(), (~t).sum()
+    return float((ranks[t].sum() - num_pos * (num_pos + 1) / 2) / (num_pos * num_neg))
+
+steps = 300 if FAST else 10_000
 lr = LRConfig(initial=1e-4, max=1e-3, end=1e-5, pct_start=0.05)
 results = {}
 for label, use_encoder in (("MLP", False), ("transformer", True)):
@@ -413,7 +438,7 @@ for label, use_encoder in (("MLP", False), ("transformer", True)):
     model = make_filter(use_encoder)
     hist = train(model, train_ds, steps, lr, device=DEVICE)
     results[label] = (model, hist, evaluate(model, val_ds, "hit_filter", device=DEVICE))
-    print(label, results[label][2])""",
+    print(f"{label:12s} ROC AUC {roc_auc(model):.3f}  at threshold 0.5: {results[label][2]}")""",
         ),
         (
             "code",
@@ -882,6 +907,11 @@ plt.xlabel("optimiser step"); plt.ylabel("loss scale"); plt.legend(); plt.show()
 ## 3. Mixed precision on your GPU
 
 Same tracker, same data, fp32 vs bf16 autocast: time per step and peak memory.
+
+Do not expect bf16 to win here. One toy event has ~200 hits, so each step is a few hundred tiny kernels
+plus the matcher on the CPU: the time goes on launch overhead, not arithmetic, and the tensor cores have
+nothing to chew on. The memory column shows the activations shrinking; the speed-up appears once the
+matrices are big (try `dim=512`, or think of 60k TrackML hits).
 """,
         ),
         (
@@ -902,11 +932,12 @@ def step(dtype):
         loss = sum(v for layer in losses.values() for task in layer.values() for v in task.values())
     opt.zero_grad(); loss.backward(); opt.step()
 
-from exercises.week08.ex02_debugging_and_speed import time_fn
+from exercises.week08.ex02_debugging_and_speed import peak_memory_mb, time_fn
 
 for dtype in (torch.float32, torch.bfloat16):
     ms = time_fn(lambda: step(dtype), warmup=2, iters=5 if FAST else 20, device=DEVICE)
-    print(f"{dtype!s:15s} {ms:7.1f} ms/step")""",
+    mb = f"{peak_memory_mb(lambda: step(dtype)):7.1f} MB peak" if DEVICE == "cuda" else ""
+    print(f"{dtype!s:15s} {ms:7.1f} ms/step  {mb}")""",
         ),
         (
             "md",

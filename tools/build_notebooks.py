@@ -83,7 +83,7 @@ That is how `hybrid_norm: true` in a hepattn encoder config reaches the layers.
 for name, cls in NORM_TYPES.items():
     print(f"{name:14s} -> {cls.__module__}.{cls.__qualname__}")
 
-norm = NORM_TYPES["RMSNorm"](8)  # what Residual(..., norm="RMSNorm") does internally
+norm = NORM_TYPES["LayerNorm"](8)  # what Residual(..., norm="LayerNorm") does internally (RMSNorm is yours to write in week 4)
 print(norm)""",
         ),
         (

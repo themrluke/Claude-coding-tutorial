@@ -910,9 +910,14 @@ Same tracker, same data, fp32 vs bf16 autocast: time per step and peak memory.
 
 Do not expect bf16 to win here (on a 4070 Ti both columns come out about equal, even at `dim=1024`). One
 toy event has ~200 hits, so each step is a few hundred tiny kernels plus the matcher on the CPU: the time
-goes on launch overhead, not arithmetic. The memory is mostly weights, gradients and AdamW state, which
-mixed precision keeps in float32; only the activations shrink, and with 200 tokens there are few of them.
-Both gains grow with the number of tokens, which is why they matter for 60k-hit TrackML events.
+goes on launch overhead, not arithmetic.
+
+The "MB peak" column is only the memory one step *adds* (`peak_memory_mb` subtracts what was allocated
+before): activations and gradients. The weights and AdamW state, most of the total and kept in float32 by
+mixed precision, already exist before the step, so they are not in it. With ~200 tokens the activations are
+tiny, and bf16 can even come out slightly *higher*, because autocast keeps bf16 copies of the weights for the
+duration of the forward pass. Both gains grow with the number of tokens, which is why they matter for
+60k-hit TrackML events.
 """,
         ),
         (

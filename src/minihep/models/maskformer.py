@@ -49,8 +49,32 @@ class MaskFormer(nn.Module):
         4. ``x, outputs = self.decoder(x, self.input_names)``.
         5. ``outputs["final"] = {task.name: task(x) for task in self.tasks}``.
         """
-        # TODO(week06): embed + merge, encode, unmerge, decode, final task outputs
-        raise NotImplementedError("week06 exercise (maskformer.py)")
+        # >>> week06: embed + merge, encode, unmerge, decode, final task outputs
+        x: dict[str, Tensor] = {}
+        for net in self.input_nets:
+            x[f"{net.input_name}_embed"] = net(inputs)
+            x[f"{net.input_name}_valid"] = inputs[f"{net.input_name}_valid"]
+        device = x[f"{self.input_names[0]}_valid"].device
+        for name in self.input_names:
+            x[f"key_is_{name}"] = torch.cat(
+                [torch.full((inputs[f"{other}_valid"].shape[-1],), other == name, dtype=torch.bool, device=device) for other in self.input_names]
+            )
+        x["key_embed"] = torch.cat([x[f"{name}_embed"] for name in self.input_names], dim=-2)
+        key_valid = torch.cat([x[f"{name}_valid"] for name in self.input_names], dim=-1)
+        x["key_valid"] = None if key_valid.all() else key_valid
+
+        if self.encoder is not None:
+            sort_value = None
+            if self.input_sort_field is not None:
+                sort_value = torch.cat([inputs[f"{name}_{self.input_sort_field}"] for name in self.input_names], dim=-1)
+            x["key_embed"] = self.encoder(x["key_embed"], sort_value, kv_mask=x["key_valid"])
+        for name in self.input_names:
+            x[f"{name}_embed"] = x["key_embed"][:, x[f"key_is_{name}"]]
+
+        x, outputs = self.decoder(x, self.input_names)
+        outputs["final"] = {task.name: task(x) for task in self.tasks}
+        return outputs
+        # <<< week06
 
     def predict(self, outputs: dict) -> dict:
         return {
@@ -72,6 +96,22 @@ class MaskFormer(nn.Module):
         Return ``(outputs, targets, losses)`` (the same signature as hepattn).
         """
         losses: dict[str, dict[str, dict[str, Tensor]]] = {}
-        # TODO(week06): the four steps per layer
-        raise NotImplementedError("week06 exercise (maskformer.py)")
+        # >>> week06: the four steps per layer
+        target_valid = targets[f"{self.target_object}_valid"]
+        for layer_name, layer_outputs in outputs.items():
+            cost = None
+            for task in self.tasks:
+                if task.name not in layer_outputs:
+                    continue
+                for c in task.cost(layer_outputs[task.name], targets).values():
+                    cost = c if cost is None else cost + c
+            if cost is not None:
+                pred_idx = self.matcher(cost, target_valid)
+                for task in self.tasks:
+                    if task.name not in layer_outputs or not task.permute_loss:
+                        continue
+                    for key in task.outputs:
+                        layer_outputs[task.name][key] = permute_outputs(layer_outputs[task.name][key], pred_idx)
+            losses[layer_name] = {task.name: task.loss(layer_outputs[task.name], targets) for task in self.tasks if task.name in layer_outputs}
+        # <<< week06
         return outputs, targets, losses

@@ -34,8 +34,11 @@ def pos_enc(xs: Tensor, dim: int, alpha: float = 1000, base: float = 100) -> Ten
     Steps: ``xs.unsqueeze(-1)`` so it broadcasts against the frequencies, compute the two
     halves, ``torch.cat`` on the last dim. Build the omegas on xs's device and dtype.
     """
-    # TODO(week03): unsqueeze, get_omegas(alpha, dim, base, device=..., dtype=...), sin/cos, cat
-    raise NotImplementedError("week03 exercise (posenc.py)")
+    # >>> week03: unsqueeze, get_omegas(alpha, dim, base, device=..., dtype=...), sin/cos, cat
+    xs = xs.unsqueeze(-1)
+    omega_1, omega_2 = get_omegas(alpha, dim, base, device=xs.device, dtype=xs.dtype)
+    return torch.cat(((xs * omega_1).sin(), (xs * omega_2).cos()), dim=-1)
+    # <<< week03
 
 
 def pos_enc_symmetric(xs: Tensor, dim: int, alpha: float = 1000, base: float = 100) -> Tensor:
@@ -43,8 +46,11 @@ def pos_enc_symmetric(xs: Tensor, dim: int, alpha: float = 1000, base: float = 1
 
     Check for yourself that ``pos_enc_symmetric(x) == pos_enc_symmetric(x + 2 pi)``.
     """
-    # TODO(week03): same as pos_enc but feed sin(x) and cos(x) into the two halves, both through sin
-    raise NotImplementedError("week03 exercise (posenc.py)")
+    # >>> week03: same as pos_enc but feed sin(x) and cos(x) into the two halves, both through sin
+    xs = xs.unsqueeze(-1)
+    omega_1, omega_2 = get_omegas(alpha, dim, base, device=xs.device, dtype=xs.dtype)
+    return torch.cat(((xs.sin() * omega_1).sin(), (xs.cos() * omega_2).sin()), dim=-1)
+    # <<< week03
 
 
 class PositionEncoder(nn.Module):
@@ -66,5 +72,12 @@ class PositionEncoder(nn.Module):
 
     def forward(self, inputs: dict[str, Tensor]) -> Tensor:
         """``inputs[f"{input_name}_{field}"]`` is (B, N). Return (B, N, dim)."""
-        # TODO(week03): one encoding per field (symmetric or not), zero padding for the remainder, cat on the last dim
-        raise NotImplementedError("week03 exercise (posenc.py)")
+        # >>> week03: one encoding per field (symmetric or not), zero padding for the remainder, cat on the last dim
+        encodings = []
+        for field in self.fields:
+            fn = pos_enc_symmetric if field in self.sym_fields else pos_enc
+            encodings.append(fn(inputs[f"{self.input_name}_{field}"], self.per_input_dim, self.alpha, self.base))
+        if self.remainder_dim:
+            encodings.append(torch.zeros_like(encodings[0])[..., : self.remainder_dim])
+        return torch.cat(encodings, dim=-1)
+        # <<< week03

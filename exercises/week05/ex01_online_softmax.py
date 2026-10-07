@@ -31,8 +31,16 @@ def logsumexp_blocks(scores: Tensor, block_size: int) -> Tensor:
     Return ``m + log(l)``. Careful: exp(-inf - (-inf)) is NaN; on the first block l is 0 anyway,
     so you can replace the NaN rescale factor by 0 (``torch.nan_to_num``) or special-case it.
     """
-    # TODO(week05): loop over column blocks, update m and l, return m + log(l)
-    raise NotImplementedError("week05 exercise (ex01_online_softmax.py)")
+    # >>> week05: loop over column blocks, update m and l, return m + log(l)
+    m = torch.full(scores.shape[:-1], float("-inf"), dtype=scores.dtype, device=scores.device)
+    l = torch.zeros_like(m)
+    for start in range(0, scores.shape[-1], block_size):
+        block = scores[..., start : start + block_size]
+        m_new = torch.maximum(m, block.amax(-1))
+        l = l * torch.exp(m - m_new).nan_to_num(0.0) + torch.exp(block - m_new.unsqueeze(-1)).sum(-1)
+        m = m_new
+    return m + torch.log(l)
+    # <<< week05
 
 
 def tiled_attention(q: Tensor, k: Tensor, v: Tensor, block_size: int = 64) -> tuple[Tensor, Tensor]:
@@ -42,8 +50,22 @@ def tiled_attention(q: Tensor, k: Tensor, v: Tensor, block_size: int = 64) -> tu
     Never build the full (Lq, Lk) score matrix: loop over key blocks, compute that block's
     scores ``q @ k_blockᵀ / sqrt(d)``, and update m, l and acc as described at the top.
     """
-    # TODO(week05): initialise m, l, acc; for each key block rescale and accumulate; finish with acc / l
-    raise NotImplementedError("week05 exercise (ex01_online_softmax.py)")
+    # >>> week05: initialise m, l, acc; for each key block rescale and accumulate; finish with acc / l
+    scale = 1 / math.sqrt(q.shape[-1])
+    m = torch.full(q.shape[:-1], float("-inf"), dtype=q.dtype, device=q.device)
+    l = torch.zeros_like(m)
+    acc = torch.zeros(*q.shape[:-1], v.shape[-1], dtype=q.dtype, device=q.device)
+    for start in range(0, k.shape[-2], block_size):
+        kb, vb = k[..., start : start + block_size, :], v[..., start : start + block_size, :]
+        s = (q @ kb.transpose(-2, -1)) * scale
+        m_new = torch.maximum(m, s.amax(-1))
+        correction = torch.exp(m - m_new).nan_to_num(0.0)
+        p = torch.exp(s - m_new.unsqueeze(-1))
+        l = l * correction + p.sum(-1)
+        acc = acc * correction.unsqueeze(-1) + p @ vb
+        m = m_new
+    return acc / l.unsqueeze(-1), m + torch.log(l)
+    # <<< week05
 
 
 def merge_two(out_a: Tensor, lse_a: Tensor, out_b: Tensor, lse_b: Tensor) -> tuple[Tensor, Tensor]:
@@ -58,8 +80,11 @@ def merge_two(out_a: Tensor, lse_a: Tensor, out_b: Tensor, lse_b: Tensor) -> tup
     This is exactly right, not an approximation. It is how ring attention and flash-decoding
     split work across GPUs or key chunks.
     """
-    # TODO(week05): torch.logaddexp, then the two weights (unsqueeze to broadcast over the feature dim)
-    raise NotImplementedError("week05 exercise (ex01_online_softmax.py)")
+    # >>> week05: torch.logaddexp, then the two weights (unsqueeze to broadcast over the feature dim)
+    lse = torch.logaddexp(lse_a, lse_b)
+    out = out_a * torch.exp(lse_a - lse).unsqueeze(-1) + out_b * torch.exp(lse_b - lse).unsqueeze(-1)
+    return out, lse
+    # <<< week05
 
 
 def or_merge(outs: Tensor, lses: Tensor) -> Tensor:
@@ -72,5 +97,7 @@ def or_merge(outs: Tensor, lses: Tensor) -> Tensor:
     not ordinary attention over the union: keys found by several orderings get counted several
     times. It is a deliberate, cheap, differentiable approximation. The test shows both facts.
     """
-    # TODO(week05): weights = softmax over the C axis, then a weighted sum over C
-    raise NotImplementedError("week05 exercise (ex01_online_softmax.py)")
+    # >>> week05: weights = softmax over the C axis, then a weighted sum over C
+    weights = torch.softmax(lses, dim=0)
+    return (outs * weights.unsqueeze(-1)).sum(0)
+    # <<< week05

@@ -18,8 +18,10 @@ class SwiGLU(nn.Module):
     """
 
     def forward(self, x: Tensor) -> Tensor:
-        # TODO(week03): torch.chunk into two halves on the last dim, multiply the first by silu of the second
-        raise NotImplementedError("week03 exercise (dense.py)")
+        # >>> week03: torch.chunk into two halves on the last dim, multiply the first by silu of the second
+        x1, x2 = torch.chunk(x, 2, dim=-1)
+        return x1 * F.silu(x2)
+        # <<< week03
 
 
 class Dense(nn.Module):
@@ -51,8 +53,31 @@ class Dense(nn.Module):
         ``self.output_size``: tasks check ``net.output_size`` (see ObjectClassificationTask).
         """
         super().__init__()
-        # TODO(week03): resolve defaults, then build the list of layers and wrap it in nn.Sequential
-        raise NotImplementedError("week03 exercise (dense.py)")
+        # >>> week03: resolve defaults, then build the list of layers and wrap it in nn.Sequential
+        if output_size is None:
+            output_size = input_size
+        if hidden_layers is None:
+            hidden_layers = [input_size * hidden_dim_scale]
+        if activation is None:
+            activation = nn.SiLU()
+        if activation == "SwiGLU":
+            activation = SwiGLU()
+        gate = isinstance(activation, SwiGLU)
+
+        self.input_size = input_size
+        self.output_size = output_size
+
+        layers: list[nn.Module] = []
+        sizes = [input_size, *hidden_layers]
+        for in_dim, out_dim in zip(sizes[:-1], sizes[1:]):
+            layers.extend((nn.Linear(in_dim, out_dim * 2 if gate else out_dim, bias=bias), activation))
+            if dropout:
+                layers.append(nn.Dropout(dropout))
+        layers.append(nn.Linear(sizes[-1], output_size, bias=bias))
+        if final_activation is not None:
+            layers.append(final_activation)
+        self.net = nn.Sequential(*layers)
+        # <<< week03
 
     def forward(self, x: Tensor) -> Tensor:
         return self.net(x)

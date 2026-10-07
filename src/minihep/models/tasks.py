@@ -76,20 +76,43 @@ class HitFilterTask(Task):
         self.net = Dense(dim, 1)
 
     def forward(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week03): run the net on the embeddings and squeeze the last dim
-        raise NotImplementedError("week03 exercise (tasks.py)")
+        # >>> week03: run the net on the embeddings and squeeze the last dim
+        return {f"{self.input_object}_logit": self.net(x[f"{self.input_object}_embed"]).squeeze(-1)}
+        # <<< week03
 
     def predict(self, outputs: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week03): sigmoid, then threshold
-        raise NotImplementedError("week03 exercise (tasks.py)")
+        # >>> week03: sigmoid, then threshold
+        probs = outputs[f"{self.input_object}_logit"].detach().sigmoid()
+        return {
+            f"{self.input_object}_{self.target_field}_prob": probs,
+            f"{self.input_object}_{self.target_field}": probs >= self.threshold,
+        }
+        # <<< week03
 
     def loss(self, outputs: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week03): pick the target and the valid mask, call the chosen loss function
-        raise NotImplementedError("week03 exercise (tasks.py)")
+        # >>> week03: pick the target and the valid mask, call the chosen loss function
+        logits = outputs[f"{self.input_object}_logit"]
+        target = targets[f"{self.input_object}_{self.target_field}"]
+        valid = targets.get(f"{self.input_object}_valid")
+        if self.loss_fn == "bce":
+            value = hit_bce_loss(logits, target, valid=valid)
+        else:
+            value = focal_loss(logits, target, valid=valid)
+        return {f"{self.input_object}_{self.loss_fn}": value}
+        # <<< week03
 
     def metrics(self, preds: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week03): count true positives over valid hits; guard the divisions with clamp_min(1)
-        raise NotImplementedError("week03 exercise (tasks.py)")
+        # >>> week03: count true positives over valid hits; guard the divisions with clamp_min(1)
+        key = f"{self.input_object}_{self.target_field}"
+        pred, true = preds[key], targets[key].bool()
+        valid = targets.get(f"{self.input_object}_valid", torch.ones_like(true))
+        pred, true = pred & valid, true & valid
+        tp = (pred & true).sum()
+        return {
+            "recall": tp / true.sum().clamp_min(1),
+            "precision": tp / pred.sum().clamp_min(1),
+        }
+        # <<< week03
 
 
 # ----------------------------------------------------------------------------- week 6
@@ -124,24 +147,33 @@ class ObjectValidTask(Task):
         self.loss_weight = loss_weight
         self.cost_weight = cost_weight
         self.null_weight = null_weight
-        # TODO(week06): the classification net and self.outputs
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: the classification net and self.outputs
+        self.net = Dense(dim, 1)
+        self.outputs = [f"{output_object}_logit"]
+        # <<< week06
 
     def forward(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): one logit per query
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: one logit per query
+        return {f"{self.output_object}_logit": self.net(x[f"{self.input_object}_embed"]).squeeze(-1)}
+        # <<< week06
 
     def predict(self, outputs: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): probability and boolean prediction
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: probability and boolean prediction
+        prob = outputs[f"{self.output_object}_logit"].detach().sigmoid()
+        return {f"{self.output_object}_valid_prob": prob, f"{self.output_object}_valid": prob >= 0.5}
+        # <<< week06
 
     def cost(self, outputs: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): detached float32 logits against the target validity
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: detached float32 logits against the target validity
+        logits = outputs[f"{self.output_object}_logit"].detach().float()
+        return {"object_bce": self.cost_weight * COST_FNS["object_bce"](logits, targets[f"{self.target_object}_valid"].float())}
+        # <<< week06
 
     def loss(self, outputs: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): weighted object BCE
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: weighted object BCE
+        logits = outputs[f"{self.output_object}_logit"]
+        return {"object_bce": self.loss_weight * object_bce_loss(logits, targets[f"{self.target_object}_valid"], self.null_weight)}
+        # <<< week06
 
 
 class HitMaskTask(Task):
@@ -191,21 +223,41 @@ class HitMaskTask(Task):
         self.object_net = Dense(dim, dim)
 
     def forward(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): mask tokens, einsum with the hit embeddings, mask padded hits
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: mask tokens, einsum with the hit embeddings, mask padded hits
+        mask_tokens = self.object_net(x[f"{self.input_object}_embed"])
+        logits = torch.einsum("bqd,bnd->bqn", mask_tokens, x[f"{self.input_constituent}_embed"])
+        valid = x.get(f"{self.input_constituent}_valid")
+        if valid is not None:
+            logits = logits.masked_fill(~valid.unsqueeze(-2), torch.finfo(logits.dtype).min)
+        return {self.logit_key: logits}
+        # <<< week06
 
     def attn_mask(self, outputs: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): threshold the detached probabilities
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: threshold the detached probabilities
+        return {self.input_constituent: outputs[self.logit_key].detach().sigmoid() >= self.mask_attention_threshold}
+        # <<< week06
 
     def predict(self, outputs: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): probabilities and booleans
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: probabilities and booleans
+        prob = outputs[self.logit_key].detach().sigmoid()
+        stem = f"{self.output_object}_{self.input_constituent}_valid"
+        return {f"{stem}_prob": prob, stem: prob >= self.pred_threshold}
+        # <<< week06
 
     def cost(self, outputs: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): weighted costs from COST_FNS on detached float32 logits
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: weighted costs from COST_FNS on detached float32 logits
+        logits = outputs[self.logit_key].detach().float()
+        target = targets[self.target_key].float()
+        valid = targets.get(f"{self.input_constituent}_valid")
+        return {name: weight * COST_FNS[name](logits, target, valid) for name, weight in self.costs.items()}
+        # <<< week06
 
     def loss(self, outputs: dict[str, Tensor], targets: dict[str, Tensor]) -> dict[str, Tensor]:
-        # TODO(week06): dice and/or focal on the real objects
-        raise NotImplementedError("week06 exercise (tasks.py)")
+        # >>> week06: dice and/or focal on the real objects
+        logits = outputs[self.logit_key]
+        target = targets[self.target_key]
+        object_valid = targets[f"{self.target_object}_valid"]
+        valid = targets.get(f"{self.input_constituent}_valid")
+        fns = {"mask_dice": mask_dice_loss, "mask_focal": mask_focal_loss}
+        return {name: weight * fns[name](logits, target, object_valid, valid) for name, weight in self.losses.items()}
+        # <<< week06

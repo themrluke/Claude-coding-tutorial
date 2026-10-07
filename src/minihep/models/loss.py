@@ -33,8 +33,16 @@ def hit_bce_loss(logits: Tensor, targets: Tensor, valid: Tensor | None = None, b
 
     Use ``F.binary_cross_entropy_with_logits(..., pos_weight=...)``. Return a scalar.
     """
-    # TODO(week03): drop padded hits with boolean indexing, compute pos_weight, call F.binary_cross_entropy_with_logits
-    raise NotImplementedError("week03 exercise (loss.py)")
+    # >>> week03: drop padded hits with boolean indexing, compute pos_weight, call F.binary_cross_entropy_with_logits
+    targets = targets.to(logits.dtype)
+    if valid is not None:
+        logits, targets = logits[valid], targets[valid]
+    pos_weight = None
+    if balance:
+        frac = targets.mean()
+        pos_weight = 1.0 / frac if frac > 0 else torch.ones((), device=logits.device, dtype=logits.dtype)
+    return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
+    # <<< week03
 
 
 def focal_loss(logits: Tensor, targets: Tensor, gamma: float = 2.0, valid: Tensor | None = None) -> Tensor:
@@ -49,8 +57,15 @@ def focal_loss(logits: Tensor, targets: Tensor, gamma: float = 2.0, valid: Tenso
         valid: optional bool mask of the same shape; only valid elements count.
     Return the mean over valid elements.
     """
-    # TODO(week03): unreduced BCE with logits, p = sigmoid, p_t, scale, mean (over valid elements)
-    raise NotImplementedError("week03 exercise (loss.py)")
+    # >>> week03: unreduced BCE with logits, p = sigmoid, p_t, scale, mean (over valid elements)
+    targets = targets.to(logits.dtype)
+    if valid is not None:
+        logits, targets = logits[valid], targets[valid]
+    ce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+    p = logits.sigmoid()
+    p_t = p * targets + (1 - p) * (1 - targets)
+    return (ce * (1 - p_t) ** gamma).mean()
+    # <<< week03
 
 
 # ----------------------------------------------------------------------------- week 6
@@ -67,8 +82,11 @@ def object_bce_cost(logits: Tensor, targets: Tensor) -> Tensor:
     hepattn's approximation of BCE: ``-p * t - (1 - p) * (1 - t)`` with p = sigmoid(logit),
     broadcast so p varies along Q and t along T.
     """
-    # TODO(week06): sigmoid, unsqueeze p to (B, Q, 1) and t to (B, 1, T), combine
-    raise NotImplementedError("week06 exercise (loss.py)")
+    # >>> week06: sigmoid, unsqueeze p to (B, Q, 1) and t to (B, 1, T), combine
+    p = logits.sigmoid().unsqueeze(-1)
+    t = targets.unsqueeze(1)
+    return -p * t - (1 - p) * (1 - t)
+    # <<< week06
 
 
 def mask_bce_cost(logits: Tensor, targets: Tensor, input_valid: Tensor | None = None) -> Tensor:
@@ -80,16 +98,29 @@ def mask_bce_cost(logits: Tensor, targets: Tensor, input_valid: Tensor | None = 
         ``einsum("bqn,btn->bqt", pos, t) + einsum("bqn,btn->bqt", neg, 1 - t)``
     Zero ``pos`` and ``neg`` on padded hits first (multiply by ``input_valid.unsqueeze(1)``).
     """
-    # TODO(week06): pos and neg per (query, hit), mask padding, two einsums
-    raise NotImplementedError("week06 exercise (loss.py)")
+    # >>> week06: pos and neg per (query, hit), mask padding, two einsums
+    pos = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits), reduction="none")
+    neg = F.binary_cross_entropy_with_logits(logits, torch.zeros_like(logits), reduction="none")
+    if input_valid is not None:
+        pos = pos * input_valid.unsqueeze(1)
+        neg = neg * input_valid.unsqueeze(1)
+    return torch.einsum("bqn,btn->bqt", pos, targets) + torch.einsum("bqn,btn->bqt", neg, 1 - targets)
+    # <<< week06
 
 
 def mask_focal_cost(logits: Tensor, targets: Tensor, input_valid: Tensor | None = None, gamma: float = 2.0) -> Tensor:
     """Like mask_bce_cost but each term carries the focal factor:
     ``pos *= (1 - p) ** gamma`` and ``neg *= p ** gamma``. (hepattn: mask_focal_cost.)
     """
-    # TODO(week06): focal-weighted pos and neg, mask padding, two einsums
-    raise NotImplementedError("week06 exercise (loss.py)")
+    # >>> week06: focal-weighted pos and neg, mask padding, two einsums
+    p = logits.sigmoid()
+    pos = (1 - p) ** gamma * F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits), reduction="none")
+    neg = p**gamma * F.binary_cross_entropy_with_logits(logits, torch.zeros_like(logits), reduction="none")
+    if input_valid is not None:
+        pos = pos * input_valid.unsqueeze(1)
+        neg = neg * input_valid.unsqueeze(1)
+    return torch.einsum("bqn,btn->bqt", pos, targets) + torch.einsum("bqn,btn->bqt", neg, 1 - targets)
+    # <<< week06
 
 
 def mask_dice_cost(logits: Tensor, targets: Tensor, input_valid: Tensor | None = None) -> Tensor:
@@ -98,8 +129,14 @@ def mask_dice_cost(logits: Tensor, targets: Tensor, input_valid: Tensor | None =
     |P ∩ T| = ``einsum("bqn,btn->bqt", p, t)``, |P| = p.sum(-1) as (B, Q, 1), |T| = t.sum(-1) as (B, 1, T).
     The +1 smoothing keeps empty masks finite. Zero p on padded hits first.
     """
-    # TODO(week06): probabilities, mask padding, numerator via einsum, denominator via broadcasting
-    raise NotImplementedError("week06 exercise (loss.py)")
+    # >>> week06: probabilities, mask padding, numerator via einsum, denominator via broadcasting
+    p = logits.sigmoid()
+    if input_valid is not None:
+        p = p * input_valid.unsqueeze(1)
+    numerator = 2 * torch.einsum("bqn,btn->bqt", p, targets)
+    denominator = p.sum(-1).unsqueeze(-1) + targets.sum(-1).unsqueeze(1)
+    return 1 - (numerator + 1) / (denominator + 1)
+    # <<< week06
 
 
 def object_bce_loss(logits: Tensor, targets: Tensor, null_weight: float = 1.0, query_valid: Tensor | None = None) -> Tensor:
@@ -109,8 +146,13 @@ def object_bce_loss(logits: Tensor, targets: Tensor, null_weight: float = 1.0, q
     ``sample_weight = target + null_weight * (1 - target)``. If ``query_valid`` is given, padded
     queries get weight 0.
     """
-    # TODO(week06): build the sample weight, F.binary_cross_entropy_with_logits(..., weight=...)
-    raise NotImplementedError("week06 exercise (loss.py)")
+    # >>> week06: build the sample weight, F.binary_cross_entropy_with_logits(..., weight=...)
+    targets = targets.to(logits.dtype)
+    weight = targets + null_weight * (1 - targets)
+    if query_valid is not None:
+        weight = weight * query_valid.to(logits.dtype)
+    return F.binary_cross_entropy_with_logits(logits, targets, weight=weight)
+    # <<< week06
 
 
 def mask_dice_loss(logits: Tensor, targets: Tensor, object_valid: Tensor, input_valid: Tensor | None = None) -> Tensor:
@@ -119,8 +161,13 @@ def mask_dice_loss(logits: Tensor, targets: Tensor, object_valid: Tensor, input_
     Select the real objects with boolean indexing (``logits[object_valid]`` gives (num_real, N)),
     zero the padded hits, then mean of ``1 - (2 sum(p t) + 1) / (sum(p) + sum(t) + 1)``.
     """
-    # TODO(week06): index valid objects, mask padded hits (expand input_valid to (B, Q, N) first), dice per object, mean
-    raise NotImplementedError("week06 exercise (loss.py)")
+    # >>> week06: index valid objects, mask padded hits (expand input_valid to (B, Q, N) first), dice per object, mean
+    p = logits.sigmoid()
+    if input_valid is not None:
+        p = p * input_valid.unsqueeze(1)
+    p, t = p[object_valid], targets[object_valid].to(p.dtype)
+    return (1 - (2 * (p * t).sum(-1) + 1) / (p.sum(-1) + t.sum(-1) + 1)).mean()
+    # <<< week06
 
 
 def mask_focal_loss(logits: Tensor, targets: Tensor, object_valid: Tensor, input_valid: Tensor | None = None, gamma: float = 2.0) -> Tensor:
@@ -130,8 +177,19 @@ def mask_focal_loss(logits: Tensor, targets: Tensor, object_valid: Tensor, input
     divide by the number of valid hits (``input_valid.sum(-1)``), then average over real objects.
     (hepattn: mask_focal_loss with input_pad_mask.)
     """
-    # TODO(week06): focal per element on (B, Q, N), mask hits, normalise per object, select real objects, mean
-    raise NotImplementedError("week06 exercise (loss.py)")
+    # >>> week06: focal per element on (B, Q, N), mask hits, normalise per object, select real objects, mean
+    targets = targets.to(logits.dtype)
+    ce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+    p = logits.sigmoid()
+    p_t = p * targets + (1 - p) * (1 - targets)
+    loss = ce * (1 - p_t) ** gamma
+    if input_valid is None:
+        per_object = loss.mean(-1)
+    else:
+        loss = loss * input_valid.unsqueeze(1)
+        per_object = loss.sum(-1) / input_valid.sum(-1, keepdim=True).clamp_min(1)
+    return per_object[object_valid].mean()
+    # <<< week06
 
 
 COST_FNS = {

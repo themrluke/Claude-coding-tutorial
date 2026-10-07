@@ -46,5 +46,25 @@ def build_tracker(
     matcher:    Matcher()
     and ``input_sort_field="phi"``.
     """
-    # TODO(week06): construct each piece, then MaskFormer(...)
-    raise NotImplementedError("week06 exercise (ex02_build_tracker.py)")
+    # >>> week06: construct each piece, then MaskFormer(...)
+    posenc = PositionEncoder("hit", list(posenc_fields), dim, sym_fields=["phi"], alpha=10)
+    input_nets = nn.ModuleList([InputNet("hit", Dense(len(fields), dim, hidden_layers=[dim]), fields, posenc=posenc)])
+    encoder = Encoder(num_encoder_layers, dim, attn_kwargs={"num_heads": num_heads})
+    decoder = MaskFormerDecoder(num_queries, dim, num_decoder_layers, layer_kwargs={"attn_kwargs": {"num_heads": num_heads}})
+    tasks = nn.ModuleList(
+        [
+            ObjectValidTask("track_valid", input_object="query", output_object="track", target_object="particle", dim=dim),
+            HitMaskTask(
+                "track_hit_valid",
+                input_constituent="hit",
+                input_object="query",
+                output_object="track",
+                target_object="particle",
+                dim=dim,
+                losses={"mask_dice": 2.0, "mask_focal": 10.0},
+                costs={"mask_dice": 2.0, "mask_focal": 10.0},
+            ),
+        ]
+    )
+    return MaskFormer(input_nets, encoder, decoder, tasks, matcher=Matcher(), input_sort_field="phi")
+    # <<< week06

@@ -27,8 +27,15 @@ def check_inputs_finite(batch: dict[str, Tensor], max_abs: float | None = None) 
     Run this on suspicious batches. With ``max_abs=65504`` it would have flagged the corrupt TrackML
     events (charge_frac 121k-717k) before they were cast to fp16 by ``.half()`` in the data loader.
     """
-    # TODO(week08): loop over items, skip non-floating dtypes, test isfinite and the magnitude
-    raise NotImplementedError("week08 exercise (ex02_debugging_and_speed.py)")
+    # >>> week08: loop over items, skip non-floating dtypes, test isfinite and the magnitude
+    bad = []
+    for key, value in batch.items():
+        if not torch.is_floating_point(value):
+            continue
+        if not torch.isfinite(value).all() or (max_abs is not None and value.abs().max() > max_abs):
+            bad.append(key)
+    return sorted(bad)
+    # <<< week08
 
 
 def first_nonfinite_module(model: nn.Module, *args, **kwargs) -> str | None:
@@ -42,8 +49,35 @@ def first_nonfinite_module(model: nn.Module, *args, **kwargs) -> str | None:
       stay attached to the model forever.
     - Skip the root module (name ""), so a container is not reported before its children.
     """
-    # TODO(week08): register one hook per named submodule that records names of non-finite outputs in order
-    raise NotImplementedError("week08 exercise (ex02_debugging_and_speed.py)")
+    # >>> week08: register one hook per named submodule that records names of non-finite outputs in order
+    found: list[str] = []
+
+    def tensors(obj):
+        if isinstance(obj, Tensor):
+            yield obj
+        elif isinstance(obj, (tuple, list)):
+            for o in obj:
+                yield from tensors(o)
+        elif isinstance(obj, dict):
+            for o in obj.values():
+                yield from tensors(o)
+
+    def make_hook(name: str):
+        def hook(module, inputs, output):
+            if any(t.is_floating_point() and not torch.isfinite(t).all() for t in tensors(output)):
+                found.append(name)
+
+        return hook
+
+    handles = [module.register_forward_hook(make_hook(name)) for name, module in model.named_modules() if name]
+    try:
+        with torch.no_grad():
+            model(*args, **kwargs)
+    finally:
+        for handle in handles:
+            handle.remove()
+    return found[0] if found else None
+    # <<< week08
 
 
 def time_fn(fn: Callable, *args, warmup: int = 3, iters: int = 10, device: str = "cpu") -> float:
@@ -53,8 +87,19 @@ def time_fn(fn: Callable, *args, warmup: int = 3, iters: int = 10, device: str =
     before starting and before stopping each timer. (hepattn: utils/cuda_timer.py and the
     InferenceTimer callback use CUDA events, which is the same idea.)
     """
-    # TODO(week08): warm up, then time each call with perf_counter around synchronize() calls
-    raise NotImplementedError("week08 exercise (ex02_debugging_and_speed.py)")
+    # >>> week08: warm up, then time each call with perf_counter around synchronize() calls
+    sync = torch.cuda.synchronize if device.startswith("cuda") else (lambda: None)
+    for _ in range(warmup):
+        fn(*args)
+    times = []
+    for _ in range(iters):
+        sync()
+        start = time.perf_counter()
+        fn(*args)
+        sync()
+        times.append((time.perf_counter() - start) * 1000)
+    return statistics.median(times)
+    # <<< week08
 
 
 def count_graph_breaks(fn: Callable, *args) -> int:
@@ -65,8 +110,10 @@ def count_graph_breaks(fn: Callable, *args) -> int:
     end of a function, like ``.item()`` feeding an ``if``, is listed in ``break_reasons`` but not counted
     in ``graph_break_count``. Call ``torch._dynamo.reset()`` first so earlier compilations do not interfere.
     """
-    # TODO(week08): reset, explain, return the number of break reasons
-    raise NotImplementedError("week08 exercise (ex02_debugging_and_speed.py)")
+    # >>> week08: reset, explain, return the number of break reasons
+    torch._dynamo.reset()
+    return len(torch._dynamo.explain(fn)(*args).break_reasons)
+    # <<< week08
 
 
 def peak_memory_mb(fn: Callable, *args) -> float:
@@ -75,5 +122,11 @@ def peak_memory_mb(fn: Callable, *args) -> float:
     ``torch.cuda.reset_peak_memory_stats()``, note ``memory_allocated()``, run, synchronize,
     ``max_memory_allocated()``. GPU only. (hepattn: callbacks/memory_stats.py.)
     """
-    # TODO(week08): reset stats, baseline, run, peak minus baseline
-    raise NotImplementedError("week08 exercise (ex02_debugging_and_speed.py)")
+    # >>> week08: reset stats, baseline, run, peak minus baseline
+    torch.cuda.synchronize()
+    torch.cuda.reset_peak_memory_stats()
+    base = torch.cuda.memory_allocated()
+    fn(*args)
+    torch.cuda.synchronize()
+    return (torch.cuda.max_memory_allocated() - base) / 2**20
+    # <<< week08

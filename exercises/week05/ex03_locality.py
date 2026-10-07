@@ -17,8 +17,9 @@ import numpy as np
 
 def positions_from_sort_value(sort_value: np.ndarray) -> np.ndarray:
     """Position of each hit in the sequence after sorting by ``sort_value`` (the rank). Stable sort."""
-    # TODO(week05): argsort of argsort (you wrote this in week 2)
-    raise NotImplementedError("week05 exercise (ex03_locality.py)")
+    # >>> week05: argsort of argsort (you wrote this in week 2)
+    return np.argsort(np.argsort(sort_value, kind="stable"), kind="stable")
+    # <<< week05
 
 
 def pair_recall(particle_id: np.ndarray, positions: np.ndarray, window_size: int, seq_len: int | None = None) -> float:
@@ -29,8 +30,21 @@ def pair_recall(particle_id: np.ndarray, positions: np.ndarray, window_size: int
     Vectorise per particle: for one particle with hit positions p, the pairwise distances are
     ``abs(p[:, None] - p[None, :])``; take the upper triangle (``np.triu_indices``).
     """
-    # TODO(week05): loop over unique non-zero particle ids, count pairs and pairs within the window
-    raise NotImplementedError("week05 exercise (ex03_locality.py)")
+    # >>> week05: loop over unique non-zero particle ids, count pairs and pairs within the window
+    half = window_size // 2
+    total = within = 0
+    for pid in np.unique(particle_id[particle_id != 0]):
+        p = positions[particle_id == pid]
+        if len(p) < 2:
+            continue
+        i, j = np.triu_indices(len(p), k=1)
+        d = np.abs(p[i] - p[j])
+        if seq_len is not None:
+            d = np.minimum(d, seq_len - d)
+        total += len(d)
+        within += int((d <= half).sum())
+    return 1.0 if total == 0 else within / total
+    # <<< week05
 
 
 def cell_sort_value(eta: np.ndarray, phi: np.ndarray, num_phi_bins: int, eta_range: float = 4.0) -> np.ndarray:
@@ -41,5 +55,7 @@ def cell_sort_value(eta: np.ndarray, phi: np.ndarray, num_phi_bins: int, eta_ran
     This is the idea behind models/ordering.py (which uses equal-occupancy quantile bins and a
     random projection instead of plain eta inside each cell).
     """
-    # TODO(week05): integer phi bin, then combine with shifted eta so bins never overlap
-    raise NotImplementedError("week05 exercise (ex03_locality.py)")
+    # >>> week05: integer phi bin, then combine with shifted eta so bins never overlap
+    phi_bin = np.clip(np.floor((phi + np.pi) / (2 * np.pi) * num_phi_bins), 0, num_phi_bins - 1)
+    return phi_bin * (2 * eta_range + 1) + (eta + eta_range)
+    # <<< week05

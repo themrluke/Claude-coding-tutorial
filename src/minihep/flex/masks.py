@@ -24,8 +24,12 @@ from torch.nn.attention.flex_attention import BlockMask, _mask_mod_signature
 def sliding_window_mask(window_size: int) -> _mask_mod_signature:
     """Allow pairs with ``|q_idx - kv_idx| <= window_size // 2``. (Same as hepattn.)"""
 
-    # TODO(week05): return a closure mask_mod(b, h, q_idx, kv_idx); combine two comparisons with &
-    raise NotImplementedError("week05 exercise (masks.py)")
+    # >>> week05: return a closure mask_mod(b, h, q_idx, kv_idx); combine two comparisons with &
+    def mask_mod(b, h, q_idx, kv_idx):
+        return (q_idx - kv_idx <= window_size // 2) & (kv_idx - q_idx <= window_size // 2)
+
+    return mask_mod
+    # <<< week05
 
 
 def sliding_window_mask_wrapped(window_size: int, q_len: Tensor) -> _mask_mod_signature:
@@ -35,8 +39,15 @@ def sliding_window_mask_wrapped(window_size: int, q_len: Tensor) -> _mask_mod_si
     Allowed if the direct distance OR the distance the other way round the ring is <= window_size // 2.
     """
 
-    # TODO(week05): diagonal band | the two wrap-around corners (q - kv + L) and (kv - q + L)
-    raise NotImplementedError("week05 exercise (masks.py)")
+    # >>> week05: diagonal band | the two wrap-around corners (q - kv + L) and (kv - q + L)
+    def mask_mod(b, h, q_idx, kv_idx):
+        half = window_size // 2
+        diagonal = (q_idx - kv_idx <= half) & (kv_idx - q_idx <= half)
+        wrap = ((q_idx - kv_idx + q_len[0]) <= half) | ((kv_idx - q_idx + q_len[0]) <= half)
+        return diagonal | wrap
+
+    return mask_mod
+    # <<< week05
 
 
 def strided_window_mask(window_size: int, q_len: int, kv_len: int) -> _mask_mod_signature:
@@ -47,8 +58,15 @@ def strided_window_mask(window_size: int, q_len: int, kv_len: int) -> _mask_mod_
     (flex/local_ca.py) and what the paper calls LSCA. No wrapping here.
     """
 
-    # TODO(week05): compute the stride as a float, the centre with torch.round, compare |kv - centre|
-    raise NotImplementedError("week05 exercise (masks.py)")
+    # >>> week05: compute the stride as a float, the centre with torch.round, compare |kv - centre|
+    stride = kv_len / q_len
+
+    def mask_mod(b, h, q_idx, kv_idx):
+        centre = torch.round(q_idx * stride)
+        return (kv_idx - centre).abs() <= window_size // 2
+
+    return mask_mod
+    # <<< week05
 
 
 def mask_mod_to_dense(mask_mod: _mask_mod_signature, q_len: int, kv_len: int, device: str = "cpu") -> Tensor:

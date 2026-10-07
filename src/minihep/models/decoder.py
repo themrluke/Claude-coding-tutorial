@@ -36,8 +36,14 @@ class MaskFormerDecoderLayer(nn.Module):
         dense_kwargs = dense_kwargs or {}
         attn_kwargs = attn_kwargs or {}
         self.bidirectional_ca = bidirectional_ca
-        # TODO(week06): build the Residual-wrapped blocks
-        raise NotImplementedError("week06 exercise (decoder.py)")
+        # >>> week06: build the Residual-wrapped blocks
+        self.q_ca = Residual(Attention(dim, **attn_kwargs), dim, norm)
+        self.q_dense = Residual(Dense(dim, **dense_kwargs), dim, norm)
+        self.q_sa = Residual(Attention(dim, **attn_kwargs), dim, norm)
+        if bidirectional_ca:
+            self.kv_ca = Residual(Attention(dim, **attn_kwargs), dim, norm)
+            self.kv_dense = Residual(Dense(dim, **dense_kwargs), dim, norm)
+        # <<< week06
 
     def forward(self, q: Tensor, kv: Tensor, attn_mask: Tensor | None = None, kv_mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
         """q (B, Q, D), kv (B, N, D), attn_mask (B, Q, N) bool or None, kv_mask (B, N) bool or None.
@@ -48,8 +54,19 @@ class MaskFormerDecoderLayer(nn.Module):
           rows (hits with no owner attend to every query).
         Return ``(q, kv)``.
         """
-        # TODO(week06): query update, then the optional hit update
-        raise NotImplementedError("week06 exercise (decoder.py)")
+        # >>> week06: query update, then the optional hit update
+        q = self.q_ca(q, k=kv, v=kv, attn_mask=attn_mask, kv_mask=kv_mask)
+        q = self.q_dense(q)
+        q = self.q_sa(q)
+        if self.bidirectional_ca:
+            mask_t = None
+            if attn_mask is not None:
+                mask_t = attn_mask.transpose(-2, -1)
+                mask_t = torch.where(mask_t.any(-1, keepdim=True), mask_t, True)
+            kv = self.kv_ca(kv, k=q, v=q, attn_mask=mask_t)
+            kv = self.kv_dense(kv)
+        return q, kv
+        # <<< week06
 
 
 class MaskFormerDecoder(nn.Module):
@@ -86,8 +103,23 @@ class MaskFormerDecoder(nn.Module):
         """
         if not self.mask_attention:
             return None
-        # TODO(week06): OR per input, scatter into the merged key axis, unmask empty rows, detach
-        raise NotImplementedError("week06 exercise (decoder.py)")
+        # >>> week06: OR per input, scatter into the merged key axis, unmask empty rows, detach
+        masks: dict[str, Tensor] = {}
+        for task in self.tasks:
+            if task.name not in layer_outputs:
+                continue
+            for name, m in task.attn_mask(layer_outputs[task.name]).items():
+                masks[name] = masks[name] | m if name in masks else m
+        if not masks:
+            return None
+        batch_size, num_keys = x["key_embed"].shape[0], x["key_embed"].shape[1]
+        attn_mask = torch.zeros(batch_size, x["query_embed"].shape[1], num_keys, dtype=torch.bool, device=x["key_embed"].device)
+        for name, m in masks.items():
+            attn_mask[:, :, x[f"key_is_{name}"]] = m
+        if self.unmask_all_false:
+            attn_mask = torch.where(attn_mask.any(-1, keepdim=True), attn_mask, True)
+        return attn_mask.detach()
+        # <<< week06
 
     def forward(self, x: dict[str, Tensor], input_names: list[str]) -> tuple[dict[str, Tensor], dict[str, dict[str, dict[str, Tensor]]]]:
         """Run the decoder. Returns ``(x, outputs)`` with ``outputs[f"layer_{i}"][task.name]`` for every layer.
@@ -100,5 +132,16 @@ class MaskFormerDecoder(nn.Module):
              - unmerge: ``x[f"{name}_embed"] = x["key_embed"][:, x[f"key_is_{name}"]]`` for each input name
         The *final* task outputs are computed by MaskFormer after the last layer.
         """
-        # TODO(week06): the loop described above
-        raise NotImplementedError("week06 exercise (decoder.py)")
+        # >>> week06: the loop described above
+        batch_size = x["key_embed"].shape[0]
+        x["query_embed"] = self.initial_queries.expand(batch_size, -1, -1)
+        outputs: dict[str, dict[str, dict[str, Tensor]]] = {}
+        for i, layer in enumerate(self.layers):
+            layer_outputs = {task.name: task(x) for task in self.tasks if task.has_intermediate_loss}
+            outputs[f"layer_{i}"] = layer_outputs
+            attn_mask = self.build_attn_mask(x, layer_outputs, input_names)
+            x["query_embed"], x["key_embed"] = layer(x["query_embed"], x["key_embed"], attn_mask=attn_mask, kv_mask=x.get("key_valid"))
+            for name in input_names:
+                x[f"{name}_embed"] = x["key_embed"][:, x[f"key_is_{name}"]]
+        return x, outputs
+        # <<< week06

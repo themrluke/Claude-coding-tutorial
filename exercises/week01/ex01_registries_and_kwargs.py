@@ -57,8 +57,13 @@ def build_norm(name: str | None, dim: int, **kwargs):
     >>> build_norm("RMSNorm", 8, eps=1e-3)
     RMSNorm(dim=8, eps=0.001)
     """
-    # TODO(week01): return None for None, raise ValueError for unknown names, else look up and call the class
-    raise NotImplementedError("week01 exercise (ex01_registries_and_kwargs.py)")
+    # >>> week01: return None for None, raise ValueError for unknown names, else look up and call the class
+    if name is None:
+        return None
+    if name not in NORM_TYPES:
+        raise ValueError(f"Unsupported norm: {name}. Must be one of {list(NORM_TYPES.keys())}")
+    return NORM_TYPES[name](dim, **kwargs)
+    # <<< week01
 
 
 @dataclass
@@ -107,8 +112,19 @@ def build_layer_configs(
          reads the dict immediately; here you return the configs, so sharing would bite.)
       5. Passing ``attn_kwargs=None`` must behave like passing ``{}``.
     """
-    # TODO(week01): copy attn_kwargs/dense_kwargs per layer; set attn_type, window_size (flash only) and is_first_layer
-    raise NotImplementedError("week01 exercise (ex01_registries_and_kwargs.py)")
+    # >>> week01: copy attn_kwargs/dense_kwargs per layer; set attn_type, window_size (flash only) and is_first_layer
+    norm = layer_kwargs.get("norm", "LayerNorm")
+    base_attn_kwargs = layer_kwargs.get("attn_kwargs") or {}
+    base_dense_kwargs = layer_kwargs.get("dense_kwargs") or {}
+    configs = []
+    for depth in range(num_layers):
+        attn_kwargs = dict(base_attn_kwargs)
+        attn_kwargs["attn_type"] = attn_type
+        attn_kwargs["window_size"] = window_size if attn_type in FLASH_ATTN_TYPES else None
+        attn_kwargs["is_first_layer"] = depth == 0
+        configs.append(LayerConfig(depth=depth, norm=norm, attn=AttentionConfig(dim=dim, **attn_kwargs), dense_kwargs=dict(base_dense_kwargs)))
+    return configs
+    # <<< week01
 
 
 def collect_names(name: str, names: list[str] | None = None) -> list[str]:
@@ -120,5 +136,9 @@ def collect_names(name: str, names: list[str] | None = None) -> list[str]:
     ``attn_kwargs: dict | None = None`` followed by ``attn_kwargs = attn_kwargs or {}``
     for exactly this reason.
     """
-    # TODO(week01): create a new list when names is None
-    raise NotImplementedError("week01 exercise (ex01_registries_and_kwargs.py)")
+    # >>> week01: create a new list when names is None
+    if names is None:
+        names = []
+    names.append(name)
+    return names
+    # <<< week01

@@ -30,14 +30,17 @@ from torch import Tensor
 
 def overflows(values: Tensor, dtype: torch.dtype) -> Tensor:
     """Bool tensor: True where ``values`` (float32/64) become inf or NaN when cast to ``dtype``."""
-    # TODO(week08): cast, then ~isfinite
-    raise NotImplementedError("week08 exercise (ex01_precision.py)")
+    # >>> week08: cast, then ~isfinite
+    return ~torch.isfinite(values.to(dtype))
+    # <<< week08
 
 
 def relative_rounding_error(values: Tensor, dtype: torch.dtype) -> Tensor:
     """``|x - float(cast(x))| / |x|`` element-wise, computed in float64 (round-trip through ``dtype``)."""
-    # TODO(week08): round-trip, compare in float64
-    raise NotImplementedError("week08 exercise (ex01_precision.py)")
+    # >>> week08: round-trip, compare in float64
+    x = values.double()
+    return (x - values.to(dtype).double()).abs() / x.abs()
+    # <<< week08
 
 
 def accumulate(n: int, increment: float, dtype: torch.dtype) -> float:
@@ -47,8 +50,13 @@ def accumulate(n: int, increment: float, dtype: torch.dtype) -> float:
     big enough, total + increment rounds back to total ("swamping"). This is why sums, means and
     losses are kept in float32 even under autocast.
     """
-    # TODO(week08): a Python loop with a 0-dim tensor of the given dtype
-    raise NotImplementedError("week08 exercise (ex01_precision.py)")
+    # >>> week08: a Python loop with a 0-dim tensor of the given dtype
+    total = torch.zeros((), dtype=dtype)
+    inc = torch.tensor(increment, dtype=dtype)
+    for _ in range(n):
+        total = total + inc
+    return float(total)
+    # <<< week08
 
 
 def autocast_dtypes(device: str = "cpu") -> dict[str, torch.dtype]:
@@ -60,8 +68,16 @@ def autocast_dtypes(device: str = "cpu") -> dict[str, torch.dtype]:
       (hepattn wraps its matching costs like this, see models/loss.py)
     Build the layer and input on ``device``.
     """
-    # TODO(week08): three ops, record .dtype of each
-    raise NotImplementedError("week08 exercise (ex01_precision.py)")
+    # >>> week08: three ops, record .dtype of each
+    lin = torch.nn.Linear(8, 8).to(device)
+    x = torch.randn(4, 8, device=device)
+    with torch.autocast(device, dtype=torch.bfloat16):
+        y = lin(x)
+        bce = F.binary_cross_entropy_with_logits(y, torch.ones_like(y))
+        with torch.autocast(device, enabled=False):
+            cost = lin(y.float())
+    return {"linear": y.dtype, "bce": bce.dtype, "cost": cost.dtype}
+    # <<< week08
 
 
 @dataclass
@@ -83,12 +99,28 @@ class MiniGradScaler:
     history: list[float] = field(default_factory=list)
 
     def update(self, found_inf: bool) -> bool:
-        # TODO(week08): implement the two rules, append to history, return whether the step was taken
-        raise NotImplementedError("week08 exercise (ex01_precision.py)")
+        # >>> week08: implement the two rules, append to history, return whether the step was taken
+        if found_inf:
+            self.scale *= self.backoff_factor
+            self.clean_steps = 0
+            stepped = False
+        else:
+            self.clean_steps += 1
+            if self.clean_steps == self.growth_interval:
+                self.scale *= self.growth_factor
+                self.clean_steps = 0
+            stepped = True
+        self.history.append(self.scale)
+        return stepped
+        # <<< week08
 
 
 def simulate_corrupt_events(num_steps: int, bad_every: int, growth_interval: int = 2000, init_scale: float = 4096.0) -> MiniGradScaler:
     """Run a MiniGradScaler for ``num_steps`` steps where every ``bad_every``-th step (steps bad_every,
     2*bad_every, ...; counting from 1) has an inf gradient. Return the scaler (look at ``.history``)."""
-    # TODO(week08): one update per step
-    raise NotImplementedError("week08 exercise (ex01_precision.py)")
+    # >>> week08: one update per step
+    scaler = MiniGradScaler(scale=init_scale, growth_interval=growth_interval)
+    for step in range(1, num_steps + 1):
+        scaler.update(found_inf=step % bad_every == 0)
+    return scaler
+    # <<< week08

@@ -36,8 +36,30 @@ class HitFilter(nn.Module):
         4. Unmerge: ``x[f"{name}_embed"] = x["key_embed"][:, x[f"key_is_{name}"]]``.
         5. ``{"final": {task.name: task(x) for task in self.tasks}}``.
         """
-        # TODO(week03): implement the five steps (merge with torch.cat on dim -2 for embeddings, -1 for masks)
-        raise NotImplementedError("week03 exercise (hitfilter.py)")
+        # >>> week03: implement the five steps (merge with torch.cat on dim -2 for embeddings, -1 for masks)
+        x: dict[str, Tensor] = {}
+        for net in self.input_nets:
+            x[f"{net.input_name}_embed"] = net(inputs)
+            x[f"{net.input_name}_valid"] = inputs[f"{net.input_name}_valid"]
+        device = x[f"{self.input_names[0]}_valid"].device
+        for name in self.input_names:
+            x[f"key_is_{name}"] = torch.cat(
+                [torch.full((inputs[f"{other}_valid"].shape[-1],), other == name, dtype=torch.bool, device=device) for other in self.input_names]
+            )
+        x["key_embed"] = torch.cat([x[f"{name}_embed"] for name in self.input_names], dim=-2)
+        x["key_valid"] = torch.cat([x[f"{name}_valid"] for name in self.input_names], dim=-1)
+
+        if self.encoder is not None:
+            sort_value = None
+            if self.input_sort_field is not None:
+                sort_value = torch.cat([inputs[f"{name}_{self.input_sort_field}"] for name in self.input_names], dim=-1)
+            x["key_embed"] = self.encoder(x["key_embed"], sort_value)
+
+        for name in self.input_names:
+            x[f"{name}_embed"] = x["key_embed"][:, x[f"key_is_{name}"]]
+
+        return {"final": {task.name: task(x) for task in self.tasks}}
+        # <<< week03
 
     def predict(self, outputs: dict) -> dict:
         return {"final": {task.name: task.predict(outputs["final"][task.name]) for task in self.tasks}}

@@ -20,24 +20,31 @@ class RMSNorm(nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         """``y = x / sqrt(mean(x², over the last dim) + eps) * weight``, weight initialised to ones."""
         super().__init__()
-        # TODO(week04): store eps and a learnable weight of ones
-        raise NotImplementedError("week04 exercise (norm.py)")
+        # >>> week04: store eps and a learnable weight of ones
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+        # <<< week04
 
     def forward(self, x: Tensor) -> Tensor:
-        # TODO(week04): compute the rms over the last dim with keepdim=True (use torch.rsqrt)
-        raise NotImplementedError("week04 exercise (norm.py)")
+        # >>> week04: compute the rms over the last dim with keepdim=True (use torch.rsqrt)
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
+        # <<< week04
 
 
 class DyT(nn.Module):
     def __init__(self, dim: int, alpha_init_value: float = 0.5):
         """``y = tanh(alpha * x) * weight + bias``. alpha is one learnable scalar; weight ones, bias zeros."""
         super().__init__()
-        # TODO(week04): three parameters: alpha (shape (1,)), weight, bias
-        raise NotImplementedError("week04 exercise (norm.py)")
+        # >>> week04: three parameters: alpha (shape (1,)), weight, bias
+        self.alpha = nn.Parameter(torch.full((1,), alpha_init_value))
+        self.weight = nn.Parameter(torch.ones(dim))
+        self.bias = nn.Parameter(torch.zeros(dim))
+        # <<< week04
 
     def forward(self, x: Tensor) -> Tensor:
-        # TODO(week04): tanh, scale, shift
-        raise NotImplementedError("week04 exercise (norm.py)")
+        # >>> week04: tanh, scale, shift
+        return torch.tanh(self.alpha * x) * self.weight + self.bias
+        # <<< week04
 
 
 class SimpleRMSNorm(nn.Module):

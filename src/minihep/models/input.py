@@ -29,5 +29,9 @@ class InputNet(nn.Module):
         self.posenc = posenc
 
     def forward(self, inputs: dict[str, Tensor]) -> Tensor:
-        # TODO(week03): stack the fields with concat_tensors, run net, add posenc(inputs) if there is one
-        raise NotImplementedError("week03 exercise (input.py)")
+        # >>> week03: stack the fields with concat_tensors, run net, add posenc(inputs) if there is one
+        x = self.net(concat_tensors([inputs[f"{self.input_name}_{field}"] for field in self.fields]))
+        if self.posenc is not None:
+            x = x + self.posenc(inputs)
+        return x
+        # <<< week03

@@ -34,8 +34,19 @@ def matched_efficiency(
       each averaged over the batch with ``nanmean`` (an event with no predicted tracks gives 0/0).
     Return ``{"eff": ..., "pur": ...}`` as 0-dim tensors.
     """
-    # TODO(week06): follow log_custom_metrics; beware 0/0 for empty slots (it is fine, the both-valid mask removes them)
-    raise NotImplementedError("week06 exercise (metrics.py)")
+    # >>> week06: follow log_custom_metrics; beware 0/0 for empty slots (it is fine, the both-valid mask removes them)
+    pred_masks = pred_masks & pred_valid.unsqueeze(-1)
+    true_masks = true_masks & true_valid.unsqueeze(-1)
+    hit_tp = (pred_masks & true_masks).sum(-1)
+    hit_p = pred_masks.sum(-1)
+    hit_t = true_masks.sum(-1)
+    both = pred_valid & true_valid
+    efficient = (hit_tp / hit_t >= working_point) & both
+    pure = (hit_tp / hit_p >= working_point) & both
+    eff = efficient.float().sum(-1) / true_valid.float().sum(-1)
+    pur = pure.float().sum(-1) / pred_valid.float().sum(-1)
+    return {"eff": eff.nanmean(), "pur": pur.nanmean()}
+    # <<< week06
 
 
 def double_majority(pred_valid: Tensor, pred_masks: Tensor, true_valid: Tensor, true_masks: Tensor) -> dict[str, float]:
@@ -52,5 +63,22 @@ def double_majority(pred_valid: Tensor, pred_masks: Tensor, true_valid: Tensor, 
         another, earlier-indexed track is also matched to
     Return Python floats. If there are no valid tracks, fake_rate and duplicate_rate are 0.
     """
-    # TODO(week06): shared-hit matrix, best particle per track, the two majority conditions, then count
-    raise NotImplementedError("week06 exercise (metrics.py)")
+    # >>> week06: shared-hit matrix, best particle per track, the two majority conditions, then count
+    pred = pred_masks[pred_valid].long()
+    true = true_masks.long()
+    n_true = int(true_valid.sum())
+    if pred.shape[0] == 0:
+        return {"eff": 0.0, "fake_rate": 0.0, "duplicate_rate": 0.0}
+    shared = pred @ true.T  # (num_tracks, T)
+    shared[:, ~true_valid] = -1
+    best = shared.argmax(-1)
+    best_shared = shared.gather(1, best.unsqueeze(1)).squeeze(1).float()
+    n_track = pred.sum(-1).float()
+    n_particle = true.sum(-1).float()[best]
+    matched = (n_track > 0) & (best_shared / n_track.clamp_min(1) > 0.5) & (best_shared / n_particle.clamp_min(1) > 0.5)
+    matched_particles = best[matched]
+    eff = len(torch.unique(matched_particles)) / max(n_true, 1)
+    duplicates = len(matched_particles) - len(torch.unique(matched_particles))
+    num_tracks = pred.shape[0]
+    return {"eff": float(eff), "fake_rate": float((~matched).sum()) / num_tracks, "duplicate_rate": duplicates / num_tracks}
+    # <<< week06

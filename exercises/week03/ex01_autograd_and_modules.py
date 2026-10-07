@@ -20,8 +20,11 @@ def gradient_of_polynomial(x: Tensor) -> Tensor:
 
     Do not modify the caller's tensor: work on ``x.detach().clone().requires_grad_(True)``.
     """
-    # TODO(week03): make a leaf tensor that requires grad, build the scalar, call backward, return .grad
-    raise NotImplementedError("week03 exercise (ex01_autograd_and_modules.py)")
+    # >>> week03: make a leaf tensor that requires grad, build the scalar, call backward, return .grad
+    x = x.detach().clone().requires_grad_(True)
+    (x**3 - 2 * x).sum().backward()
+    return x.grad
+    # <<< week03
 
 
 class Standardiser(nn.Module):
@@ -40,17 +43,24 @@ class Standardiser(nn.Module):
 
     def __init__(self, num_features: int):
         super().__init__()
-        # TODO(week03): two nn.Parameters and two buffers
-        raise NotImplementedError("week03 exercise (ex01_autograd_and_modules.py)")
+        # >>> week03: two nn.Parameters and two buffers
+        self.weight = nn.Parameter(torch.ones(num_features))
+        self.bias = nn.Parameter(torch.zeros(num_features))
+        self.register_buffer("mean", torch.zeros(num_features))
+        self.register_buffer("std", torch.ones(num_features))
+        # <<< week03
 
     @torch.no_grad()
     def fit(self, x: Tensor) -> None:
-        # TODO(week03): copy_ the column mean and std (clamp the std away from zero) into the buffers
-        raise NotImplementedError("week03 exercise (ex01_autograd_and_modules.py)")
+        # >>> week03: copy_ the column mean and std (clamp the std away from zero) into the buffers
+        self.mean.copy_(x.mean(0))
+        self.std.copy_(x.std(0).clamp_min(1e-6))
+        # <<< week03
 
     def forward(self, x: Tensor) -> Tensor:
-        # TODO(week03): standardise, then scale and shift
-        raise NotImplementedError("week03 exercise (ex01_autograd_and_modules.py)")
+        # >>> week03: standardise, then scale and shift
+        return self.weight * (x - self.mean) / self.std + self.bias
+        # <<< week03
 
 
 def count_parameters(module: nn.Module) -> dict[str, int]:
@@ -59,14 +69,20 @@ def count_parameters(module: nn.Module) -> dict[str, int]:
     trainable: parameters with requires_grad, frozen: parameters without, buffers: all buffers.
     (hepattn's SaveConfig callback logs ``sum(p.numel() for p in model.parameters() if p.requires_grad)``.)
     """
-    # TODO(week03): iterate module.parameters() and module.buffers(), sum numel()
-    raise NotImplementedError("week03 exercise (ex01_autograd_and_modules.py)")
+    # >>> week03: iterate module.parameters() and module.buffers(), sum numel()
+    trainable = sum(p.numel() for p in module.parameters() if p.requires_grad)
+    frozen = sum(p.numel() for p in module.parameters() if not p.requires_grad)
+    buffers = sum(b.numel() for b in module.buffers())
+    return {"trainable": trainable, "frozen": frozen, "buffers": buffers}
+    # <<< week03
 
 
 def freeze(module: nn.Module) -> None:
     """Stop every parameter of ``module`` from training (set requires_grad False)."""
-    # TODO(week03): loop over parameters and call requires_grad_(False)
-    raise NotImplementedError("week03 exercise (ex01_autograd_and_modules.py)")
+    # >>> week03: loop over parameters and call requires_grad_(False)
+    for p in module.parameters():
+        p.requires_grad_(False)
+    # <<< week03
 
 
 def sgd_step(module: nn.Module, lr: float) -> None:
@@ -76,8 +92,13 @@ def sgd_step(module: nn.Module, lr: float) -> None:
     itself) and then zero the gradients (``p.grad = None``), which is what
     ``optimizer.zero_grad()`` does.
     """
-    # TODO(week03): update in place under no_grad, then reset .grad
-    raise NotImplementedError("week03 exercise (ex01_autograd_and_modules.py)")
+    # >>> week03: update in place under no_grad, then reset .grad
+    with torch.no_grad():
+        for p in module.parameters():
+            if p.grad is not None:
+                p -= lr * p.grad
+                p.grad = None
+    # <<< week03
 
 
 def dropout_outputs(p: float, x: Tensor) -> tuple[Tensor, Tensor]:
@@ -87,5 +108,11 @@ def dropout_outputs(p: float, x: Tensor) -> tuple[Tensor, Tensor]:
     rescales the rest by 1 / (1 - p). Note ``torch.no_grad()`` would *not* switch dropout off:
     only ``.eval()`` does.
     """
-    # TODO(week03): build the layer, .train() then call, .eval() then call
-    raise NotImplementedError("week03 exercise (ex01_autograd_and_modules.py)")
+    # >>> week03: build the layer, .train() then call, .eval() then call
+    layer = nn.Dropout(p)
+    layer.train()
+    out_train = layer(x)
+    layer.eval()
+    out_eval = layer(x)
+    return out_train, out_eval
+    # <<< week03

@@ -55,8 +55,19 @@ class ModelWrapper(LightningModule):
         Pass ``batch_size=batch_size`` to every ``self.log`` (Lightning cannot infer it from our dicts).
         Return the total.
         """
-        # TODO(week07): nested loops, self.log each piece, accumulate layer and total sums
-        raise NotImplementedError("week07 exercise (wrapper.py)")
+        # >>> week07: nested loops, self.log each piece, accumulate layer and total sums
+        total = torch.zeros((), device=self.device)
+        for layer_name, layer_losses in losses.items():
+            layer_total = torch.zeros((), device=self.device)
+            for task_name, task_losses in layer_losses.items():
+                for loss_name, value in task_losses.items():
+                    self.log(f"{stage}/{layer_name}_{task_name}_{loss_name}", value, batch_size=batch_size)
+                    layer_total = layer_total + value
+            self.log(f"{stage}/{layer_name}_loss", layer_total, batch_size=batch_size)
+            total = total + layer_total
+        self.log(f"{stage}/loss", total, batch_size=batch_size, prog_bar=True)
+        return total
+        # <<< week07
 
     def log_metrics(self, preds: dict, targets: dict[str, Tensor], stage: str) -> None:
         """Log ``task.metrics`` for the final layer as ``f"{stage}/final_{task.name}_{metric}"``, then call
@@ -74,28 +85,59 @@ class ModelWrapper(LightningModule):
         """forward -> model.loss -> aggregate_losses(stage="train"). Every ``trainer.log_every_n_steps``
         batches also predict and log_metrics (prediction costs time, so not every step).
         Return the total loss: Lightning calls backward on it."""
-        # TODO(week07): unpack, forward, loss, aggregate, occasional metrics, return
-        raise NotImplementedError("week07 exercise (wrapper.py)")
+        # >>> week07: unpack, forward, loss, aggregate, occasional metrics, return
+        inputs, targets = batch
+        outputs = self.model(inputs)
+        outputs, targets, losses = self.model.loss(outputs, targets)
+        total = self.aggregate_losses(losses, stage="train")
+        if batch_idx % self.trainer.log_every_n_steps == 0:
+            self.log_metrics(self.model.predict(outputs), targets, "train")
+        return total
+        # <<< week07
 
     def validation_step(self, batch: tuple[dict, dict], batch_idx: int) -> Tensor:
         """Same as training_step with stage "val", and always log metrics."""
-        # TODO(week07): forward, loss, aggregate, metrics
-        raise NotImplementedError("week07 exercise (wrapper.py)")
+        # >>> week07: forward, loss, aggregate, metrics
+        inputs, targets = batch
+        outputs = self.model(inputs)
+        outputs, targets, losses = self.model.loss(outputs, targets)
+        total = self.aggregate_losses(losses, stage="val")
+        self.log_metrics(self.model.predict(outputs), targets, "val")
+        return total
+        # <<< week07
 
     def test_step(self, batch: tuple[dict, dict], batch_idx: int) -> tuple[dict, dict, dict]:
         """Return ``(outputs, preds, targets)`` for the PredictionWriter. Call ``model.loss`` first even
         though we do not need the loss: it runs the matching and permutes the outputs, so the written
         predictions line up with the targets (hepattn does the same)."""
-        # TODO(week07): forward, loss (for the matching), predict, return the three dicts
-        raise NotImplementedError("week07 exercise (wrapper.py)")
+        # >>> week07: forward, loss (for the matching), predict, return the three dicts
+        inputs, targets = batch
+        outputs = self.model(inputs)
+        outputs, targets, _ = self.model.loss(outputs, targets)
+        return outputs, self.model.predict(outputs), targets
+        # <<< week07
 
     def configure_optimizers(self):
         """AdamW or Lion, with OneCycleLR stepped every batch (``{"scheduler": sch, "interval": "step"}``),
         exactly as hepattn's ModelWrapper.configure_optimizers. The total number of steps is
         ``self.trainer.estimated_stepping_batches``. If ``lrs_config.get("skip_scheduler")`` return just the optimiser.
         """
-        # TODO(week07): pick the optimiser class, build it, build OneCycleLR like week 3, return ([opt], [sch_dict])
-        raise NotImplementedError("week07 exercise (wrapper.py)")
+        # >>> week07: pick the optimiser class, build it, build OneCycleLR like week 3, return ([opt], [sch_dict])
+        cfg = self.lrs_config
+        opt_cls = {"adamw": torch.optim.AdamW, "lion": Lion}[self.optimizer.lower()]
+        opt = opt_cls(self.model.parameters(), lr=cfg["initial"], weight_decay=cfg["weight_decay"])
+        if cfg.get("skip_scheduler"):
+            return opt
+        sch = torch.optim.lr_scheduler.OneCycleLR(
+            opt,
+            max_lr=cfg["max"],
+            total_steps=self.trainer.estimated_stepping_batches,
+            div_factor=cfg["max"] / cfg["initial"],
+            final_div_factor=cfg["initial"] / cfg["end"],
+            pct_start=float(cfg["pct_start"]),
+        )
+        return [opt], [{"scheduler": sch, "interval": "step"}]
+        # <<< week07
 
 
 class Filter(ModelWrapper):
@@ -109,5 +151,13 @@ class Tracker(ModelWrapper):
         valid tracks). Task names "track_valid" / "track_hit_valid" as in week 6.
         (hepattn: TrackMLTracker.log_custom_metrics.)
         """
-        # TODO(week07): pull the final predictions, loop over working points, self.log
-        raise NotImplementedError("week07 exercise (wrapper.py)")
+        # >>> week07: pull the final predictions, loop over working points, self.log
+        final = preds["final"]
+        pred_valid = final["track_valid"]["track_valid"]
+        pred_masks = final["track_hit_valid"]["track_hit_valid"]
+        for wp in (0.5, 0.75, 1.0):
+            m = matched_efficiency(pred_valid, pred_masks, targets["particle_valid"], targets["particle_hit_valid"], wp)
+            self.log(f"{stage}/p{wp}_eff", m["eff"], batch_size=1)
+            self.log(f"{stage}/p{wp}_pur", m["pur"], batch_size=1)
+        self.log(f"{stage}/num_tracks", pred_valid.sum(-1).float().mean(), batch_size=1)
+        # <<< week07

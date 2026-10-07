@@ -34,12 +34,16 @@ class Timer:
         self.elapsed: float | None = None
 
     def __enter__(self) -> "Timer":
-        # TODO(week01): start the clock and return self
-        raise NotImplementedError("week01 exercise (ex04_context_and_decorators.py)")
+        # >>> week01: start the clock and return self
+        self._start = time.perf_counter()
+        return self
+        # <<< week01
 
     def __exit__(self, exc_type, exc, tb) -> bool:
-        # TODO(week01): store the elapsed time; return False so exceptions propagate
-        raise NotImplementedError("week01 exercise (ex04_context_and_decorators.py)")
+        # >>> week01: store the elapsed time; return False so exceptions propagate
+        self.elapsed = time.perf_counter() - self._start
+        return False
+        # <<< week01
 
 
 @contextmanager
@@ -49,8 +53,14 @@ def timer() -> Iterator[dict]:
     Yield a dict; after the block, it must contain ``"elapsed"``. Use try/finally so the
     time is recorded even if the block raises.
     """
-    # TODO(week01): record the start, yield a dict, fill in "elapsed" in a finally block
-    raise NotImplementedError("week01 exercise (ex04_context_and_decorators.py)")
+    # >>> week01: record the start, yield a dict, fill in "elapsed" in a finally block
+    result: dict = {}
+    start = time.perf_counter()
+    try:
+        yield result
+    finally:
+        result["elapsed"] = time.perf_counter() - start
+    # <<< week01
 
 
 def log_calls(fn: Callable) -> Callable:
@@ -62,8 +72,15 @@ def log_calls(fn: Callable) -> Callable:
       - have an attribute ``calls``: a list of ``(args, kwargs)`` tuples, one per call.
     """
 
-    # TODO(week01): write an inner wrapper with functools.wraps, attach a calls list
-    raise NotImplementedError("week01 exercise (ex04_context_and_decorators.py)")
+    # >>> week01: write an inner wrapper with functools.wraps, attach a calls list
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        wrapper.calls.append((args, kwargs))
+        return fn(*args, **kwargs)
+
+    wrapper.calls = []
+    return wrapper
+    # <<< week01
 
 
 RUN_TIMESTAMP_FORMAT = "%Y%m%d-T%H%M%S"
@@ -86,10 +103,13 @@ class RunDir:
 
     @property
     def dirname(self) -> str:
-        # TODO(week01): format name and timestamp with RUN_TIMESTAMP_FORMAT
-        raise NotImplementedError("week01 exercise (ex04_context_and_decorators.py)")
+        # >>> week01: format name and timestamp with RUN_TIMESTAMP_FORMAT
+        return f"{self.name}_{self.timestamp.strftime(RUN_TIMESTAMP_FORMAT)}"
+        # <<< week01
 
     @classmethod
     def from_dirname(cls, dirname: str) -> "RunDir":
-        # TODO(week01): split on the last underscore and parse the timestamp with datetime.strptime
-        raise NotImplementedError("week01 exercise (ex04_context_and_decorators.py)")
+        # >>> week01: split on the last underscore and parse the timestamp with datetime.strptime
+        name, _, stamp = dirname.rpartition("_")
+        return cls(name, datetime.strptime(stamp, RUN_TIMESTAMP_FORMAT))
+        # <<< week01

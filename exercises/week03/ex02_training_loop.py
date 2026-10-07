@@ -51,8 +51,18 @@ def make_optimizer_and_scheduler(
         div_factor = cfg.max / cfg.initial        (initial lr = max_lr / div_factor)
         final_div_factor = cfg.initial / cfg.end  (final lr = initial / final_div_factor)
     """
-    # TODO(week03): torch.optim.AdamW(model.parameters(), lr=cfg.initial, weight_decay=...), then OneCycleLR
-    raise NotImplementedError("week03 exercise (ex02_training_loop.py)")
+    # >>> week03: torch.optim.AdamW(model.parameters(), lr=cfg.initial, weight_decay=...), then OneCycleLR
+    opt = torch.optim.AdamW(model.parameters(), lr=cfg.initial, weight_decay=cfg.weight_decay)
+    sch = torch.optim.lr_scheduler.OneCycleLR(
+        opt,
+        max_lr=cfg.max,
+        total_steps=total_steps,
+        div_factor=cfg.max / cfg.initial,
+        final_div_factor=cfg.initial / cfg.end,
+        pct_start=cfg.pct_start,
+    )
+    return opt, sch
+    # <<< week03
 
 
 @dataclass
@@ -86,8 +96,27 @@ def train(
     """
     cfg = cfg or LRConfig()
     model.to(device)
-    # TODO(week03): optimiser + scheduler, loader, then the five-line loop num_steps times
-    raise NotImplementedError("week03 exercise (ex02_training_loop.py)")
+    # >>> week03: optimiser + scheduler, loader, then the five-line loop num_steps times
+    model.train()
+    opt, sch = make_optimizer_and_scheduler(model, num_steps, cfg)
+    loader = itertools.cycle(DataLoader(dataset, batch_size=None, shuffle=True))
+    history = History()
+    for _ in range(num_steps):
+        inputs, targets = next(loader)
+        inputs, targets = to_device(inputs, device), to_device(targets, device)
+        outputs = model(inputs)
+        _, _, losses = model.loss(outputs, targets)
+        loss = sum(value for layer in losses.values() for task in layer.values() for value in task.values())
+        opt.zero_grad()
+        loss.backward()
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip if grad_clip is not None else math.inf)
+        history.lr.append(sch.get_last_lr()[0])
+        opt.step()
+        sch.step()
+        history.loss.append(loss.item())
+        history.grad_norm.append(float(grad_norm))
+    return history
+    # <<< week03
 
 
 @torch.no_grad()
@@ -98,5 +127,16 @@ def evaluate(model: nn.Module, dataset: Dataset, task_name: str, device: str = "
     ``task.metrics(preds["final"][task_name], targets)`` for the task whose ``name == task_name``,
     and return the mean of each metric as a Python float. Restore train mode at the end.
     """
-    # TODO(week03): eval(), loop, predict, collect metrics, average, train()
-    raise NotImplementedError("week03 exercise (ex02_training_loop.py)")
+    # >>> week03: eval(), loop, predict, collect metrics, average, train()
+    model.eval()
+    task = next(t for t in model.tasks if t.name == task_name)
+    totals: dict[str, float] = {}
+    for i in range(len(dataset)):
+        inputs, targets = dataset[i]
+        inputs, targets = to_device(inputs, device), to_device(targets, device)
+        preds = model.predict(model(inputs))
+        for k, v in task.metrics(preds["final"][task_name], targets).items():
+            totals[k] = totals.get(k, 0.0) + float(v)
+    model.train()
+    return {k: v / len(dataset) for k, v in totals.items()}
+    # <<< week03

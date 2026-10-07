@@ -25,14 +25,23 @@ def make_parser() -> ArgumentParser:
     - ``--model``: any ``nn.Module`` subclass, given as class_path/init_args (``parser.add_argument("--model", type=nn.Module)``)
     - ``--tags``: list[str], default []
     """
-    # TODO(week07): ArgumentParser(), then six add_argument calls
-    raise NotImplementedError("week07 exercise (ex01_jsonargparse.py)")
+    # >>> week07: ArgumentParser(), then six add_argument calls
+    parser = ArgumentParser()
+    parser.add_argument("--config", action=ActionConfigFile)
+    parser.add_argument("--name", type=str, default="run")
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--model", type=nn.Module)
+    parser.add_argument("--tags", type=list[str], default=[])
+    return parser
+    # <<< week07
 
 
 def parse(args: list[str]) -> Namespace:
     """Parse ``args`` (a list like ``["--config", "a.yaml", "--lr", "0.1"]``) with make_parser. Do not instantiate."""
-    # TODO(week07): make_parser().parse_args(args)
-    raise NotImplementedError("week07 exercise (ex01_jsonargparse.py)")
+    # >>> week07: make_parser().parse_args(args)
+    return make_parser().parse_args(args)
+    # <<< week07
 
 
 def build(args: list[str]) -> tuple[nn.Module, Namespace]:
@@ -41,8 +50,12 @@ def build(args: list[str]) -> tuple[nn.Module, Namespace]:
     ``parser.instantiate_classes(cfg)`` returns a new Namespace in which every class_path block
     has been replaced by the object it describes.
     """
-    # TODO(week07): parse with the same parser you instantiate with
-    raise NotImplementedError("week07 exercise (ex01_jsonargparse.py)")
+    # >>> week07: parse with the same parser you instantiate with
+    parser = make_parser()
+    cfg = parser.parse_args(args)
+    init = parser.instantiate_classes(cfg)
+    return init.model, cfg
+    # <<< week07
 
 
 def dump(args: list[str]) -> str:
@@ -51,8 +64,10 @@ def dump(args: list[str]) -> str:
     Useful to see exactly what a run will use after several configs and overrides are merged.
     Leave the ``config`` key out (``skip_none=True`` is fine; the dump drops ``config`` itself).
     """
-    # TODO(week07): parse, then parser.dump
-    raise NotImplementedError("week07 exercise (ex01_jsonargparse.py)")
+    # >>> week07: parse, then parser.dump
+    parser = make_parser()
+    return parser.dump(parser.parse_args(args))
+    # <<< week07
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -61,8 +76,15 @@ def deep_merge(base: dict, override: dict) -> dict:
     Nested dicts are merged key by key (recursively); anything else in ``override``, including
     lists, replaces the value in ``base``. Return a new dict; do not modify the inputs.
     """
-    # TODO(week07): copy base, then for each key recurse if both sides are dicts, else take override's value
-    raise NotImplementedError("week07 exercise (ex01_jsonargparse.py)")
+    # >>> week07: copy base, then for each key recurse if both sides are dicts, else take override's value
+    out = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+    # <<< week07
 
 
 def load_yaml(path: Path) -> dict:

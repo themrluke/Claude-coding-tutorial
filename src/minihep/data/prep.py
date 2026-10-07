@@ -36,8 +36,15 @@ def write_event_parquet(hits: pd.DataFrame, particles: pd.DataFrame, out_dir: Pa
     Create ``out_dir`` if it does not exist. Do not write the pandas index
     (``index=False``). Return the two paths (hits first).
     """
-    # TODO(week02): mkdir(parents=True, exist_ok=True), then DataFrame.to_parquet for each table
-    raise NotImplementedError("week02 exercise (prep.py)")
+    # >>> week02: mkdir(parents=True, exist_ok=True), then DataFrame.to_parquet for each table
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    hits_path = out_dir / f"{event_name(event_id)}-hits.parquet"
+    parts_path = out_dir / f"{event_name(event_id)}-parts.parquet"
+    hits.to_parquet(hits_path, index=False)
+    particles.to_parquet(parts_path, index=False)
+    return hits_path, parts_path
+    # <<< week02
 
 
 def generate_split(out_dir: Path, num_events: int, first_event_id: int, overwrite: bool = False, seed: int = 0) -> int:
@@ -78,8 +85,22 @@ def parquet_dir_to_hdf5(in_dir: Path, out_path: Path, compression: str | None = 
     ``group.create_dataset(name, data=array, compression=...)``, ``group.attrs[key] = value``,
     ``df[column].to_numpy()``.
     """
-    # TODO(week02): open the file with a `with` block, loop over sorted *-hits.parquet files, write one group per event
-    raise NotImplementedError("week02 exercise (prep.py)")
+    # >>> week02: open the file with a `with` block, loop over sorted *-hits.parquet files, write one group per event
+    in_dir = Path(in_dir)
+    names = sorted(p.name.removesuffix("-hits.parquet") for p in in_dir.glob("event*-hits.parquet"))
+    with h5py.File(out_path, "w") as f:
+        for name in names:
+            hits = pd.read_parquet(in_dir / f"{name}-hits.parquet")
+            parts = pd.read_parquet(in_dir / f"{name}-parts.parquet")
+            group = f.create_group(name)
+            group.attrs["num_hits"] = len(hits)
+            group.attrs["num_particles"] = len(parts)
+            for table_name, table in (("hits", hits), ("parts", parts)):
+                table_group = group.create_group(table_name)
+                for column in table.columns:
+                    table_group.create_dataset(column, data=table[column].to_numpy(), compression=compression)
+    return len(names)
+    # <<< week02
 
 
 def read_event_hdf5(file: h5py.File, name: str) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -90,8 +111,12 @@ def read_event_hdf5(file: h5py.File, name: str) -> tuple[pd.DataFrame, pd.DataFr
     h5py lists a group's keys alphabetically. Nothing downstream cares, since columns
     are always looked up by name.)
     """
-    # TODO(week02): build a dict {column: dataset[()]} for "hits" and for "parts", wrap each in a DataFrame
-    raise NotImplementedError("week02 exercise (prep.py)")
+    # >>> week02: build a dict {column: dataset[()]} for "hits" and for "parts", wrap each in a DataFrame
+    group = file[name]
+    hits = pd.DataFrame({col: group["hits"][col][()] for col in group["hits"]})
+    parts = pd.DataFrame({col: group["parts"][col][()] for col in group["parts"]})
+    return hits, parts
+    # <<< week02
 
 
 def main() -> None:

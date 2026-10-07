@@ -30,8 +30,13 @@ def split_key(key: str, input_names: list[str]) -> tuple[str, str]:
     ``KeyError``. Note "hit" must not match "hitx_y": the prefix has to be followed
     by an underscore.
     """
-    # TODO(week01): find the input name that, followed by "_", starts the key
-    raise NotImplementedError("week01 exercise (ex03_abc_and_naming.py)")
+    # >>> week01: find the input name that, followed by "_", starts the key
+    for name in input_names:
+        prefix = f"{name}_"
+        if key.startswith(prefix):
+            return name, key[len(prefix) :]
+    raise KeyError(f"{key!r} does not start with any of {input_names}")
+    # <<< week01
 
 
 def merge_inputs(x: dict[str, list], input_names: list[str]) -> dict[str, list]:
@@ -48,8 +53,14 @@ def merge_inputs(x: dict[str, list], input_names: list[str]) -> dict[str, list]:
     Example with input_names ["pix", "strip"], pix_embed [1, 2], strip_embed [3]:
       key_embed [1, 2, 3], key_is_pix [True, True, False], key_is_strip [False, False, True]
     """
-    # TODO(week01): build the joined lists and one membership mask per input name
-    raise NotImplementedError("week01 exercise (ex03_abc_and_naming.py)")
+    # >>> week01: build the joined lists and one membership mask per input name
+    out = dict(x)
+    out["key_embed"] = [e for name in input_names for e in x[f"{name}_embed"]]
+    out["key_valid"] = [v for name in input_names for v in x[f"{name}_valid"]]
+    for name in input_names:
+        out[f"key_is_{name}"] = [other == name for other in input_names for _ in x[f"{other}_embed"]]
+    return out
+    # <<< week01
 
 
 def unmerge_inputs(x: dict[str, list], input_names: list[str]) -> dict[str, list]:
@@ -59,8 +70,12 @@ def unmerge_inputs(x: dict[str, list], input_names: list[str]) -> dict[str, list
     (Real version: hepattn.utils.model_utils.unmerge_inputs, which runs after the
     encoder and after every decoder layer.)
     """
-    # TODO(week01): for each name, keep the key_embed elements whose key_is_{name} entry is True
-    raise NotImplementedError("week01 exercise (ex03_abc_and_naming.py)")
+    # >>> week01: for each name, keep the key_embed elements whose key_is_{name} entry is True
+    out = dict(x)
+    for name in input_names:
+        out[f"{name}_embed"] = [e for e, keep in zip(x["key_embed"], x[f"key_is_{name}"]) if keep]
+    return out
+    # <<< week01
 
 
 class Task(ABC):
@@ -93,13 +108,18 @@ class ThresholdTask(Task):
     """
 
     def __init__(self, name: str, input_object: str, weight: float = 1.0, threshold: float = 0.5):
-        # TODO(week01): call the base class constructor, then store weight and threshold
-        raise NotImplementedError("week01 exercise (ex03_abc_and_naming.py)")
+        # >>> week01: call the base class constructor, then store weight and threshold
+        super().__init__(name, input_object)
+        self.weight = weight
+        self.threshold = threshold
+        # <<< week01
 
     def forward(self, x: dict[str, list]) -> dict[str, list]:
-        # TODO(week01): score every element of the input embedding
-        raise NotImplementedError("week01 exercise (ex03_abc_and_naming.py)")
+        # >>> week01: score every element of the input embedding
+        return {f"{self.input_object}_score": [self.weight * e for e in x[f"{self.input_object}_embed"]]}
+        # <<< week01
 
     def predict(self, outputs: dict[str, list]) -> dict[str, list]:
-        # TODO(week01): threshold the scores
-        raise NotImplementedError("week01 exercise (ex03_abc_and_naming.py)")
+        # >>> week01: threshold the scores
+        return {f"{self.input_object}_pred": [s >= self.threshold for s in outputs[f"{self.input_object}_score"]]}
+        # <<< week01

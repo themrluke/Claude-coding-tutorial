@@ -138,8 +138,45 @@ class ToyTrackingDataset(Dataset):
         Return copies, not views, so later edits cannot touch cached data
         (``reset_index(drop=True)`` after filtering keeps row labels 0..N-1).
         """
-        # TODO(week02): implement the eight steps above
-        raise NotImplementedError("week02 exercise (dataset.py)")
+        # >>> week02: implement the eight steps above
+        hits, particles = self.read_raw_event(idx)
+        if self.hit_volume_ids is not None:
+            hits = hits[hits["volume_id"].isin(self.hit_volume_ids)]
+        hits = hits.reset_index(drop=True).copy()
+        particles = particles.copy()
+
+        for coord in ("x", "y", "z"):
+            hits[coord] = hits[coord] * HIT_COORDINATE_SCALE
+
+        hits["r"] = np.sqrt(hits["x"] ** 2 + hits["y"] ** 2)
+        hits["s"] = np.sqrt(hits["x"] ** 2 + hits["y"] ** 2 + hits["z"] ** 2)
+        hits["theta"] = np.arccos(hits["z"] / hits["s"])
+        hits["phi"] = np.arctan2(hits["y"], hits["x"])
+        hits["eta"] = -np.log(np.tan(hits["theta"] / 2))
+
+        particles["pt"] = np.sqrt(particles["px"] ** 2 + particles["py"] ** 2)
+        particles["p"] = np.sqrt(particles["px"] ** 2 + particles["py"] ** 2 + particles["pz"] ** 2)
+        particles["eta"] = np.arctanh(particles["pz"] / particles["p"])
+        particles["phi"] = np.arctan2(particles["py"], particles["px"])
+        particles["qopt"] = particles["q"] / particles["pt"]
+
+        hits = self._apply_hit_filter(hits, idx)
+
+        counts = hits.loc[hits["particle_id"] != 0, "particle_id"].value_counts()
+        enough_hits = counts[counts >= self.particle_min_num_hits].index
+        keep = (
+            (particles["pt"] > self.particle_min_pt)
+            & (particles["eta"].abs() < self.particle_max_abs_eta)
+            & particles["particle_id"].isin(enough_hits)
+        )
+        particles = particles[keep].reset_index(drop=True)
+
+        hits["on_valid_particle"] = hits["particle_id"].isin(particles["particle_id"])
+        first = hits[hits["on_valid_particle"]].groupby("particle_id")["r"].idxmin()
+        hits["is_first"] = False
+        hits.loc[first.to_numpy(), "is_first"] = True
+        return hits, particles
+        # <<< week02
 
     def _apply_hit_filter(self, hits: pd.DataFrame, idx: int) -> pd.DataFrame:
         """Week 7: drop the hits that the hit filter scored below ``hit_filter_threshold``.
@@ -153,8 +190,13 @@ class ToyTrackingDataset(Dataset):
         """
         if self.hit_eval_path is None:
             return hits
-        # TODO(week07): open hit_eval_path, read the probabilities for this event, keep hits >= threshold
-        raise NotImplementedError("week07 exercise (dataset.py)")
+        # >>> week07: open hit_eval_path, read the probabilities for this event, keep hits >= threshold
+        with h5py.File(self.hit_eval_path, "r") as f:
+            probs = f[f"{self.event_names[idx]}/preds/final/hit_filter/hit_on_valid_particle_prob"][0]
+        if len(probs) != len(hits):
+            raise ValueError(f"Filter file has {len(probs)} hits for {self.event_names[idx]}, dataset has {len(hits)}")
+        return hits[probs >= self.hit_filter_threshold].reset_index(drop=True)
+        # <<< week07
 
     def __getitem__(self, idx: int) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
         """Build the ``(inputs, targets)`` dicts described in the module docstring.
@@ -175,8 +217,40 @@ class ToyTrackingDataset(Dataset):
            are a tripwire: if a loss ever reads a padded slot, it becomes NaN and you notice.
         8. ``targets["sample_id"] = torch.tensor([sample_id])``.
         """
-        # TODO(week02): implement the eight steps above
-        raise NotImplementedError("week02 exercise (dataset.py)")
+        # >>> week02: implement the eight steps above
+        hits, particles = self.load_event(idx)
+        inputs: dict[str, Tensor] = {}
+        targets: dict[str, Tensor] = {}
+
+        for input_name, fields in self.inputs.items():
+            inputs[f"{input_name}_valid"] = torch.ones(1, len(hits), dtype=torch.bool)
+            targets[f"{input_name}_valid"] = inputs[f"{input_name}_valid"]
+            for field in fields:
+                inputs[f"{input_name}_{field}"] = torch.from_numpy(hits[field].to_numpy(dtype=np.float32, copy=True)).unsqueeze(0)
+
+        particles = particles.iloc[: self.event_max_num_particles]
+        num_particles = len(particles)
+        num_padding = self.event_max_num_particles - num_particles
+
+        targets["particle_valid"] = torch.cat([torch.ones(num_particles, dtype=torch.bool), torch.zeros(num_padding, dtype=torch.bool)]).unsqueeze(0)
+
+        particle_ids = torch.cat(
+            [torch.from_numpy(particles["particle_id"].to_numpy(dtype=np.int64, copy=True)), torch.full((num_padding,), PARTICLE_PAD_ID)]
+        )
+        hit_particle_ids = torch.from_numpy(hits["particle_id"].to_numpy(dtype=np.int64, copy=True))
+        targets["particle_hit_valid"] = (particle_ids.unsqueeze(-1) == hit_particle_ids.unsqueeze(-2)).unsqueeze(0)
+
+        for field in self.targets.get("hit", []):
+            targets[f"hit_{field}"] = torch.from_numpy(hits[field].to_numpy(dtype=bool, copy=True)).unsqueeze(0)
+
+        for field in self.targets.get("particle", []):
+            values = torch.full((self.event_max_num_particles,), torch.nan)
+            values[:num_particles] = torch.from_numpy(particles[field].to_numpy(dtype=np.float32, copy=True))
+            targets[f"particle_{field}"] = values.unsqueeze(0)
+
+        targets["sample_id"] = torch.tensor([self.sample_ids[idx]])
+        return inputs, targets
+        # <<< week02
 
 
 def pad_collate(batch: list[tuple[dict[str, Tensor], dict[str, Tensor]]], input_name: str = "hit") -> tuple[dict[str, Tensor], dict[str, Tensor]]:
@@ -197,5 +271,23 @@ def pad_collate(batch: list[tuple[dict[str, Tensor], dict[str, Tensor]]], input_
 
     Hint: ``torch.nn.functional.pad(t, (0, n_pad))`` pads the last dimension on the right.
     """
-    # TODO(week02): find the longest hit axis, then pad (if hit-axis tensor) and torch.cat every key
-    raise NotImplementedError("week02 exercise (dataset.py)")
+    # >>> week02: find the longest hit axis, then pad (if hit-axis tensor) and torch.cat every key
+    max_hits = max(inputs[f"{input_name}_valid"].shape[-1] for inputs, _ in batch)
+
+    def is_hit_axis(key: str) -> bool:
+        return key.startswith(f"{input_name}_") or key == f"particle_{input_name}_valid"
+
+    def stack(dicts: list[dict[str, Tensor]]) -> dict[str, Tensor]:
+        out = {}
+        for key in dicts[0]:
+            tensors = []
+            for d in dicts:
+                t = d[key]
+                if is_hit_axis(key):
+                    t = torch.nn.functional.pad(t, (0, max_hits - t.shape[-1]), value=False if t.dtype == torch.bool else 0.0)
+                tensors.append(t)
+            out[key] = torch.cat(tensors, dim=0)
+        return out
+
+    return stack([inputs for inputs, _ in batch]), stack([targets for _, targets in batch])
+    # <<< week02

@@ -31,14 +31,22 @@ def unpad(x: Tensor, valid: Tensor) -> tuple[Tensor, Tensor, Tensor, int]:
 
     Hints: ``valid.flatten().nonzero().flatten()``; ``F.pad(lengths.cumsum(0), (1, 0))``.
     """
-    # TODO(week05): lengths per row, flat indices of valid tokens, gather, cumulative lengths
-    raise NotImplementedError("week05 exercise (ex02_varlen.py)")
+    # >>> week05: lengths per row, flat indices of valid tokens, gather, cumulative lengths
+    lengths = valid.sum(-1)
+    indices = valid.flatten().nonzero().flatten()
+    x_packed = x.flatten(0, 1)[indices]
+    cu_seqlens = F.pad(lengths.cumsum(0), (1, 0)).to(torch.int32)
+    return x_packed, indices, cu_seqlens, int(lengths.max())
+    # <<< week05
 
 
 def pad(x_packed: Tensor, indices: Tensor, batch_size: int, seq_len: int) -> Tensor:
     """Inverse of ``unpad``: scatter the packed tokens back into a zero-filled (B, S, ...) tensor."""
-    # TODO(week05): allocate (B * S, ...) zeros, assign at indices, unflatten
-    raise NotImplementedError("week05 exercise (ex02_varlen.py)")
+    # >>> week05: allocate (B * S, ...) zeros, assign at indices, unflatten
+    out = torch.zeros(batch_size * seq_len, *x_packed.shape[1:], dtype=x_packed.dtype, device=x_packed.device)
+    out[indices] = x_packed
+    return out.unflatten(0, (batch_size, seq_len))
+    # <<< week05
 
 
 def varlen_self_attention(q: Tensor, k: Tensor, v: Tensor, cu_seqlens: Tensor) -> Tensor:
@@ -48,5 +56,10 @@ def varlen_self_attention(q: Tensor, k: Tensor, v: Tensor, cu_seqlens: Tensor) -
     ((S, H, Dh) -> (H, S, Dh)), run ``F.scaled_dot_product_attention`` and write the result back.
     flash_attn_varlen_func does this for all events in one kernel launch; the result is the same.
     """
-    # TODO(week05): loop over consecutive pairs of cu_seqlens, transpose, SDPA, transpose back
-    raise NotImplementedError("week05 exercise (ex02_varlen.py)")
+    # >>> week05: loop over consecutive pairs of cu_seqlens, transpose, SDPA, transpose back
+    out = torch.empty_like(q)
+    for start, end in zip(cu_seqlens[:-1].tolist(), cu_seqlens[1:].tolist()):
+        qs, ks, vs = (t[start:end].transpose(0, 1) for t in (q, k, v))
+        out[start:end] = F.scaled_dot_product_attention(qs, ks, vs).transpose(0, 1)
+    return out
+    # <<< week05

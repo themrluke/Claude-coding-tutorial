@@ -31,8 +31,12 @@ def match_one(cost: np.ndarray, num_valid_targets: int) -> np.ndarray:
     3. Append every prediction not in ``cols``, in increasing order, so the result is a full
        permutation of 0..Q-1.
     """
-    # TODO(week06): transpose the valid part, solve, append the unused predictions
-    raise NotImplementedError("week06 exercise (matcher.py)")
+    # >>> week06: transpose the valid part, solve, append the unused predictions
+    _, cols = scipy.optimize.linear_sum_assignment(cost[:, :num_valid_targets].T)
+    unused = np.ones(cost.shape[0], dtype=bool)
+    unused[cols] = False
+    return np.concatenate([cols, np.flatnonzero(unused)]).astype(np.int64)
+    # <<< week06
 
 
 class Matcher(nn.Module):
@@ -48,8 +52,14 @@ class Matcher(nn.Module):
         Real targets come first in ``target_valid`` (the dataset pads at the end), so the
         number of real targets is ``target_valid[b].sum()``.
         """
-        # TODO(week06): to numpy, finite check, match_one per batch element, stack, back to a tensor
-        raise NotImplementedError("week06 exercise (matcher.py)")
+        # >>> week06: to numpy, finite check, match_one per batch element, stack, back to a tensor
+        costs_np = costs.detach().float().cpu().numpy()
+        if not np.isfinite(costs_np).all():
+            raise ValueError("Matching costs contain NaN or inf: check the model outputs and the padding masks")
+        lengths = target_valid.sum(-1).tolist()
+        idx = np.stack([match_one(costs_np[b], int(lengths[b])) for b in range(costs_np.shape[0])])
+        return torch.from_numpy(idx).to(costs.device)
+        # <<< week06
 
 
 def permute_outputs(x: Tensor, pred_idx: Tensor) -> Tensor:

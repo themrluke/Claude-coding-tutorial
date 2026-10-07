@@ -20,8 +20,14 @@ def make_window_mask(window_size: int) -> Callable[[int, int], bool]:
 
     Same rule as hepattn's ``sliding_window_mask``.
     """
-    # TODO(week01): define an inner function that uses window_size, then return it
-    raise NotImplementedError("week01 exercise (ex02_closures.py)")
+    # >>> week01: define an inner function that uses window_size, then return it
+    half = window_size // 2
+
+    def mask(q_idx: int, kv_idx: int) -> bool:
+        return abs(q_idx - kv_idx) <= half
+
+    return mask
+    # <<< week01
 
 
 def make_wrapped_window_mask(window_size: int, seq_len: list[int]) -> Callable[[int, int], bool]:
@@ -43,8 +49,15 @@ def make_wrapped_window_mask(window_size: int, seq_len: list[int]) -> Callable[[
 
     Rule: True if the plain distance or the distance around the ring is <= window_size // 2.
     """
-    # TODO(week01): compute the direct distance and the wrap-around distance using seq_len[0]
-    raise NotImplementedError("week01 exercise (ex02_closures.py)")
+    # >>> week01: compute the direct distance and the wrap-around distance using seq_len[0]
+    half = window_size // 2
+
+    def mask(q_idx: int, kv_idx: int) -> bool:
+        d = abs(q_idx - kv_idx)
+        return min(d, seq_len[0] - d) <= half
+
+    return mask
+    # <<< week01
 
 
 def make_counter() -> Callable[[], int]:
@@ -53,8 +66,16 @@ def make_counter() -> Callable[[], int]:
     Each counter made by ``make_counter`` must count independently. You'll need
     ``nonlocal``.
     """
-    # TODO(week01): keep a count in the enclosing scope and update it with nonlocal
-    raise NotImplementedError("week01 exercise (ex02_closures.py)")
+    # >>> week01: keep a count in the enclosing scope and update it with nonlocal
+    count = 0
+
+    def counter() -> int:
+        nonlocal count
+        count += 1
+        return count
+
+    return counter
+    # <<< week01
 
 
 def make_multipliers(n: int) -> list[Callable[[float], float]]:
@@ -64,5 +85,6 @@ def make_multipliers(n: int) -> list[Callable[[float], float]]:
     lambda looks up ``i`` when it is *called*, after the loop has finished, so they all
     multiply by ``n - 1``. This is called late binding. Fix it.
     """
-    # TODO(week01): bind the current value of i at creation time (default argument or a factory function)
-    raise NotImplementedError("week01 exercise (ex02_closures.py)")
+    # >>> week01: bind the current value of i at creation time (default argument or a factory function)
+    return [lambda x, i=i: i * x for i in range(n)]
+    # <<< week01

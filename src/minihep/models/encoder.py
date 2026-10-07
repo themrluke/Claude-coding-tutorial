@@ -29,12 +29,14 @@ class LayerScale(nn.Module):
 
     def __init__(self, dim: int, init_value: float = 1e-5):
         super().__init__()
-        # TODO(week04): one parameter of shape (dim,) filled with init_value
-        raise NotImplementedError("week04 exercise (encoder.py)")
+        # >>> week04: one parameter of shape (dim,) filled with init_value
+        self.gamma = nn.Parameter(torch.full((dim,), init_value))
+        # <<< week04
 
     def forward(self, x: Tensor) -> Tensor:
-        # TODO(week04): scale
-        raise NotImplementedError("week04 exercise (encoder.py)")
+        # >>> week04: scale
+        return x * self.gamma
+        # <<< week04
 
 
 class DropPath(nn.Module):
@@ -49,8 +51,14 @@ class DropPath(nn.Module):
         self.drop_prob = drop_prob
 
     def forward(self, x: Tensor) -> Tensor:
-        # TODO(week04): identity if not training or p == 0; else a (B, 1, ..., 1) keep mask, divide by keep prob
-        raise NotImplementedError("week04 exercise (encoder.py)")
+        # >>> week04: identity if not training or p == 0; else a (B, 1, ..., 1) keep mask, divide by keep prob
+        if self.drop_prob == 0.0 or not self.training:
+            return x
+        keep_prob = 1 - self.drop_prob
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+        keep = (torch.rand(shape, dtype=x.dtype, device=x.device) < keep_prob).to(x.dtype)
+        return x * keep / keep_prob
+        # <<< week04
 
 
 class Residual(nn.Module):
@@ -65,12 +73,21 @@ class Residual(nn.Module):
         super().__init__()
         if post_norm and norm is None:
             raise ValueError("post_norm=True needs a norm")
-        # TODO(week04): store fn and post_norm; norm, layer scale and drop path as modules (Identity when unused)
-        raise NotImplementedError("week04 exercise (encoder.py)")
+        # >>> week04: store fn and post_norm; norm, layer scale and drop path as modules (Identity when unused)
+        self.fn = fn
+        self.post_norm = post_norm
+        self.norm = NORM_TYPES[norm](dim) if norm else nn.Identity()
+        self.ls = LayerScale(dim, layer_scale) if layer_scale is not None else nn.Identity()
+        self.dp = DropPath(drop_path) if drop_path else nn.Identity()
+        # <<< week04
 
     def forward(self, x: Tensor, **kwargs) -> Tensor:
-        # TODO(week04): the two orderings described above
-        raise NotImplementedError("week04 exercise (encoder.py)")
+        # >>> week04: the two orderings described above
+        if self.post_norm:
+            x = self.norm(x)
+            return x + self.dp(self.ls(self.fn(x, **kwargs)))
+        return x + self.dp(self.ls(self.fn(self.norm(x), **kwargs)))
+        # <<< week04
 
 
 class EncoderLayer(nn.Module):
@@ -96,8 +113,12 @@ class EncoderLayer(nn.Module):
         super().__init__()
         attn_kwargs = attn_kwargs or {}
         dense_kwargs = dense_kwargs or {}
-        # TODO(week04): hybrid-norm config, then two Residual blocks
-        raise NotImplementedError("week04 exercise (encoder.py)")
+        # >>> week04: hybrid-norm config, then two Residual blocks
+        attn_norm, dense_post_norm, qkv_norm = get_hybrid_norm_config(norm, depth, hybrid_norm, qkv_norm)
+        residual = partial(Residual, dim=dim, layer_scale=layer_scale, drop_path=drop_path)
+        self.attn = residual(Attention(dim, qkv_norm=qkv_norm, norm=norm, **attn_kwargs), norm=attn_norm)
+        self.dense = residual(Dense(dim, **dense_kwargs), norm=norm, post_norm=dense_post_norm)
+        # <<< week04
 
     def forward(self, x: Tensor, **kwargs) -> Tensor:
         return self.dense(self.attn(x, **kwargs))
@@ -128,8 +149,12 @@ class Encoder(nn.Module):
         self.attn_type = attn_type
         self.window_size = window_size
         self.window_wrap = window_wrap
-        # TODO(week04): copy attn_kwargs, set attn_type and window_size, build an nn.ModuleList of layers
-        raise NotImplementedError("week04 exercise (encoder.py)")
+        # >>> week04: copy attn_kwargs, set attn_type and window_size, build an nn.ModuleList of layers
+        attn_kwargs = dict(attn_kwargs or {})
+        attn_kwargs["attn_type"] = attn_type
+        attn_kwargs["window_size"] = window_size if attn_type in FLASH_ATTN_TYPES else None
+        self.layers = nn.ModuleList([EncoderLayer(dim=dim, depth=i, attn_kwargs=attn_kwargs, **layer_kwargs) for i in range(num_layers)])
+        # <<< week04
 
     def build_attn_mask(self, seq_len: int, device) -> Tensor | object | None:
         """Week 5: the sliding-window mask for this sequence length, or None.
@@ -141,8 +166,17 @@ class Encoder(nn.Module):
         torch.tensor([L]))`` when ``window_wrap``. (hepattn caches the mask_mod and writes the length into
         the tensor in place; building it fresh each time is simpler and fine for us.)
         """
-        # TODO(week05): choose the mask_mod, then build a dense mask or a BlockMask depending on attn_type
-        raise NotImplementedError("week05 exercise (encoder.py)")
+        # >>> week05: choose the mask_mod, then build a dense mask or a BlockMask depending on attn_type
+        if not self.window_size or self.attn_type in FLASH_ATTN_TYPES:
+            return None
+        if self.window_wrap:
+            mask_mod = sliding_window_mask_wrapped(self.window_size, torch.tensor([seq_len], device=device))
+        else:
+            mask_mod = sliding_window_mask(self.window_size)
+        if self.attn_type == "torch":
+            return create_mask(mask_mod, 1, 1, seq_len, seq_len, device=str(device))
+        return create_block_mask(mask_mod, B=None, H=None, Q_LEN=seq_len, KV_LEN=seq_len, device=str(device))
+        # <<< week05
 
     def forward(self, x: Tensor, x_sort_value: Tensor | None = None, kv_mask: Tensor | None = None) -> Tensor:
         """Encode (B, N, D) tokens.
@@ -157,8 +191,32 @@ class Encoder(nn.Module):
              the last ``window_size // 2`` tokens and append the first ``window_size // 2``, run the
              layers, then cut them off again. (Exactly what hepattn does.)
         """
-        # TODO(week04): sort (gather), layers, unsort (gather with the inverse permutation)
-        raise NotImplementedError("week04 exercise (encoder.py)")
+        # >>> week04: sort (gather), layers, unsort (gather with the inverse permutation)
+        sort_idx = None
+        if x_sort_value is not None:
+            sort_idx = torch.argsort(x_sort_value, dim=-1)
+            x = torch.gather(x, -2, sort_idx.unsqueeze(-1).expand_as(x))
+            if kv_mask is not None:
+                kv_mask = torch.gather(kv_mask, -1, sort_idx)
+
+        attn_mask = self.build_attn_mask(x.shape[-2], x.device) if self.window_size else None
+
+        half = (self.window_size or 0) // 2
+        wrap_flash = self.attn_type in FLASH_ATTN_TYPES and self.window_wrap
+        if wrap_flash:
+            x = torch.cat([x[:, -half:], x, x[:, :half]], dim=1)
+
+        for layer in self.layers:
+            x = layer(x, kv_mask=kv_mask, attn_mask=attn_mask)
+
+        if wrap_flash:
+            x = x[:, half:-half]
+
+        if sort_idx is not None:
+            unsort_idx = torch.argsort(sort_idx, dim=-1)
+            x = torch.gather(x, -2, unsort_idx.unsqueeze(-1).expand_as(x))
+        return x
+        # <<< week04
 
     def set_backend(self, attn_type: str) -> None:
         """Switch every layer's attention kernel (provided). hepattn: Encoder.set_backend / change_attn_backends."""

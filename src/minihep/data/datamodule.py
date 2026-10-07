@@ -48,13 +48,21 @@ class ToyDataModule(LightningDataModule):
     def setup(self, stage: str) -> None:
         """fit: build ``self.train_dataset`` and ``self.val_dataset``; test: build ``self.test_dataset``
         (raise ValueError if ``test_dir`` is None). Each with its own num_* and hit_eval_* and ``**self.kwargs``."""
-        # TODO(week07): build the datasets this stage needs
-        raise NotImplementedError("week07 exercise (datamodule.py)")
+        # >>> week07: build the datasets this stage needs
+        if stage == "fit":
+            self.train_dataset = ToyTrackingDataset(self.train_dir, num_events=self.num_train, hit_eval_path=self.hit_eval_train, **self.kwargs)
+            self.val_dataset = ToyTrackingDataset(self.val_dir, num_events=self.num_val, hit_eval_path=self.hit_eval_val, **self.kwargs)
+        if stage == "test":
+            if self.test_dir is None:
+                raise ValueError("No test directory given: pass --data.test_dir")
+            self.test_dataset = ToyTrackingDataset(self.test_dir, num_events=self.num_test, hit_eval_path=self.hit_eval_test, **self.kwargs)
+        # <<< week07
 
     def _loader(self, dataset: ToyTrackingDataset, shuffle: bool) -> DataLoader:
         """``batch_size=None``: every item is already a whole event with a batch dim of 1 (week 2)."""
-        # TODO(week07): DataLoader with batch_size=None, the shuffle flag, num_workers and pin_memory
-        raise NotImplementedError("week07 exercise (datamodule.py)")
+        # >>> week07: DataLoader with batch_size=None, the shuffle flag, num_workers and pin_memory
+        return DataLoader(dataset, batch_size=None, shuffle=shuffle, num_workers=self.num_workers, pin_memory=self.pin_memory)
+        # <<< week07
 
     def train_dataloader(self) -> DataLoader:
         return self._loader(self.train_dataset, shuffle=True)

@@ -96,8 +96,12 @@ class PredictionWriter(Callback):
         return Path(trainer.default_root_dir) / f"predictions__{split}.h5"
 
     def on_test_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
-        # TODO(week07): resolve the path, make its parent directory, open the file for writing
-        raise NotImplementedError("week07 exercise (callbacks.py)")
+        # >>> week07: resolve the path, make its parent directory, open the file for writing
+        path = self.resolve_path(trainer)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.file = h5py.File(path, "w")
+        self.path = path
+        # <<< week07
 
     def on_test_batch_end(self, trainer: Trainer, pl_module: LightningModule, outputs, batch, batch_idx: int, dataloader_idx: int = 0) -> None:
         """``outputs`` here is whatever ``test_step`` returned: ``(model_outputs, preds, targets)``.
@@ -107,12 +111,30 @@ class PredictionWriter(Callback):
         ``preds["final"]`` (and optionally ``model_outputs["final"]``) task by task, and the targets.
         Use ``group.create_dataset(key, data=to_numpy(tensor), compression="lzf")``.
         """
-        # TODO(week07): create the event group, set the sample_id attribute, write the requested dicts
-        raise NotImplementedError("week07 exercise (callbacks.py)")
+        # >>> week07: create the event group, set the sample_id attribute, write the requested dicts
+        model_outputs, preds, targets = outputs
+        name = trainer.datamodule.test_dataset.event_names[batch_idx]
+        group = self.file.create_group(name)
+        group.attrs["sample_id"] = int(targets["sample_id"][0])
+        for task_name, task_preds in preds["final"].items():
+            for key, value in task_preds.items():
+                group.create_dataset(f"preds/final/{task_name}/{key}", data=to_numpy(value), compression="lzf")
+        if self.write_outputs:
+            for task_name, task_outputs in model_outputs["final"].items():
+                for key, value in task_outputs.items():
+                    group.create_dataset(f"outputs/final/{task_name}/{key}", data=to_numpy(value), compression="lzf")
+        if self.write_targets:
+            for key, value in targets.items():
+                group.create_dataset(f"targets/{key}", data=to_numpy(value), compression="lzf")
+        # <<< week07
 
     def on_test_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
-        # TODO(week07): close the file (and print where it is)
-        raise NotImplementedError("week07 exercise (callbacks.py)")
+        # >>> week07: close the file (and print where it is)
+        if self.file is not None:
+            self.file.close()
+            self.file = None
+            print(f"Wrote predictions to {self.path}")
+        # <<< week07
 
 
 class Compile(Callback):
@@ -131,8 +153,15 @@ class Compile(Callback):
     def _compile(self, pl_module: LightningModule) -> None:
         """Call ``submodule.compile(dynamic=..., mode=...)`` (in place) on ``pl_module.model.encoder`` and
         ``pl_module.model.decoder`` if they exist and are not None. Only once."""
-        # TODO(week08): guard with self.compiled, compile the two submodules in place
-        raise NotImplementedError("week08 exercise (callbacks.py)")
+        # >>> week08: guard with self.compiled, compile the two submodules in place
+        if self.compiled:
+            return
+        for name in ("encoder", "decoder"):
+            submodule = getattr(pl_module.model, name, None)
+            if submodule is not None:
+                submodule.compile(dynamic=self.dynamic, mode=self.mode)
+        self.compiled = True
+        # <<< week08
 
     def on_train_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
         self._compile(pl_module)

@@ -908,10 +908,11 @@ plt.xlabel("optimiser step"); plt.ylabel("loss scale"); plt.legend(); plt.show()
 
 Same tracker, same data, fp32 vs bf16 autocast: time per step and peak memory.
 
-Do not expect bf16 to win here. One toy event has ~200 hits, so each step is a few hundred tiny kernels
-plus the matcher on the CPU: the time goes on launch overhead, not arithmetic, and the tensor cores have
-nothing to chew on. The memory column shows the activations shrinking; the speed-up appears once the
-matrices are big (try `dim=512`, or think of 60k TrackML hits).
+Do not expect bf16 to win here (on a 4070 Ti both columns come out about equal, even at `dim=1024`). One
+toy event has ~200 hits, so each step is a few hundred tiny kernels plus the matcher on the CPU: the time
+goes on launch overhead, not arithmetic. The memory is mostly weights, gradients and AdamW state, which
+mixed precision keeps in float32; only the activations shrink, and with 200 tokens there are few of them.
+Both gains grow with the number of tokens, which is why they matter for 60k-hit TrackML events.
 """,
         ),
         (

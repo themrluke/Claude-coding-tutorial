@@ -1,0 +1,117 @@
+[project]
+name = "minihep"
+version = "0.1.0"
+description = "An 8-week course that rebuilds a small hepattn from scratch"
+authors = [{ name = "Luke Johnson", email = "themrlukejohnson@gmail.com" }]
+readme = "README.md"
+requires-python = "==3.12.*"
+dependencies = [
+    "numpy>=2.1,<3",
+    "scipy>=1.14,<2",
+    "pandas>=2.2,<4",
+    "pyarrow>=17",
+    "h5py>=3.11,<4",
+    "matplotlib>=3.9,<4",
+    "pyyaml>=6",
+    "lightning==2.5.2",
+    "jsonargparse[signatures]==4.40.1",
+    "comet-ml==3.50.0",
+    "lion-pytorch>=0.2.3,<0.3",
+    "pytest>=8.3,<9",
+    "ruff==0.13.0",
+    "pre-commit>=4,<5",
+    "jupyterlab>=4,<5",
+    "ipykernel>=6.29",
+    "nbstripout>=0.8",
+]
+
+# Optional extras, exactly like hepattn's fa2 group. pixi turns each
+# dependency group into a "feature" that environments can switch on.
+[dependency-groups]
+fa2 = ["flash-attn @ https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.17/flash_attn-2.8.3%2Bcu128torch2.9-cp312-cp312-linux_x86_64.whl"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minihep"]
+
+# ---------------------------------------------------------------------------
+# pixi: the environment manager hepattn uses. Read this section next to
+# hepattn's pyproject.toml, the structure is deliberately the same.
+# ---------------------------------------------------------------------------
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.dependencies]
+python = "3.12.*"
+git = ">=2.45"
+# A C++ compiler: torch.compile's CPU backend (Inductor) generates and compiles C++.
+# hepattn pins gxx for the same reason (it also builds the lap1015 extension).
+gxx = ">=13"
+
+[tool.pixi.pypi-dependencies]
+minihep = { path = ".", editable = true }
+
+# The CUDA build of torch from PyTorch's own index. The wheel bundles its CUDA libraries, so all your
+# machine needs is a recent NVIDIA driver (in WSL: the Windows driver, nothing installed inside Linux).
+[tool.pixi.feature.gpu.pypi-dependencies]
+torch = { version = "==2.9.1", index = "https://download.pytorch.org/whl/cu128" }
+
+[tool.pixi.feature.cpu.pypi-dependencies]
+torch = { version = "==2.9.1", index = "https://download.pytorch.org/whl/cpu" }
+
+[tool.pixi.environments]
+default = { features = ["gpu"] }
+fa2 = { features = ["gpu", "fa2"] }
+cpu = { features = ["cpu"] }
+
+[tool.pixi.tasks]
+test = "pytest"
+lint = "ruff check . && ruff format --check ."
+fmt = "ruff check --fix . && ruff format ."
+lab = "jupyter lab --no-browser"
+# `pixi run week 03` runs only week 3's tests
+week = { cmd = "pytest tests/week{{ n }} -v", args = ["n"] }
+gpu-check = "python -c 'import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"no GPU\")'"
+
+# ---------------------------------------------------------------------------
+# ruff: lint + format. Same line length as hepattn, a gentler rule set.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 150
+src = ["src", "."]
+extend-exclude = [".pixi", "data", "logs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "N", "PT", "NPY"]
+ignore = ["N806", "N812", "RUF001", "RUF002", "RUF003", "B905", "E741", "PT011", "SIM108", "RUF007"]
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = ["E501", "F401", "E402", "E701", "E702", "B023"]
+# On `main` the exercise bodies are stubs, so imports you will need look unused until you write them.
+"src/minihep/**" = ["F401", "F841"]
+"exercises/**" = ["F401", "F841"]
+"tools/build_notebooks.py" = ["E501"] # notebook cells are long strings
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "src"]
+addopts = "-ra"
+markers = [
+    "gpu: needs a CUDA GPU (skipped automatically without one)",
+    "flash: needs the flash-attn package (pixi run -e fa2 ...)",
+    "slow: takes more than a few seconds (deselect with -m 'not slow')",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::FutureWarning",
+    "ignore:.*does not have many workers.*",
+    "ignore:.*GPU available but not used.*",
+    "ignore:flex_attention called without torch.compile:UserWarning",
+]

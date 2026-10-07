@@ -1,0 +1,37 @@
+# Continuous integration: GitHub runs this on every push and pull request.
+# Compare with hepattn's .github/workflows/{lint,test}.yaml.
+name: CI
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          environments: cpu
+          locked: true
+          cache: true
+      - name: ruff
+        run: pixi run -e cpu lint
+      - name: notebooks have no outputs
+        run: pixi run -e cpu nbstripout --verify notebooks/*.ipynb
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          environments: cpu
+          locked: true
+          cache: true
+      # On main the exercises are stubs, so only check that every test can be collected.
+      # On the solutions branch everything must pass.
+      - name: collect tests (main and your work branches)
+        if: github.ref_name != 'solutions'
+        run: pixi run -e cpu pytest --collect-only -q
+      - name: run all tests (solutions branch)
+        if: github.ref_name == 'solutions'
+        run: pixi run -e cpu pytest -m "not gpu"

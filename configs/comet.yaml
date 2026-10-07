@@ -1,0 +1,11 @@
+# Overlay: switch the logger to Comet. Add it as a *second* config:
+#   python -m minihep.run_tracking fit --config configs/toy_tracking.yaml --config configs/comet.yaml
+# Later configs override earlier ones key by key, so only the logger changes.
+# Needs an API key in ~/.comet.config or COMET_API_KEY (see src/minihep/lightning/loggers.py).
+trainer:
+  logger:
+    class_path: minihep.lightning.loggers.CometLogger
+    init_args:
+      project: minihep
+      offline_directory: logs # replaced by the run directory by the CLI
+      online: true # false: write an offline archive instead of streaming

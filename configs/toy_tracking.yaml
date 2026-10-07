@@ -1,0 +1,135 @@
+# Toy MaskFormer tracker. Read this next to
+#   /shared/projects/hepattn/src/hepattn/experiments/trackml/configs/tracking-eta4-pt600-flex.yaml
+# Each `class_path` + `init_args` block is one constructor call (compare week 6's build_tracker).
+# `&name` defines a YAML anchor, `*name` reuses its value.
+#
+#   python -m minihep.run_tracking fit  --config configs/toy_tracking.yaml
+#   python -m minihep.run_tracking fit  --config configs/toy_tracking.yaml --config configs/comet.yaml
+#   python -m minihep.run_tracking test --config logs/<run dir>/config.yaml
+
+seed_everything: 42
+name: toy-tracking
+
+data:
+  train_dir: data/toy/train
+  val_dir: data/toy/val
+  test_dir: data/toy/test
+  num_train: -1
+  num_val: 100
+  num_test: -1
+  num_workers: 2
+
+  # Reconstructable particles: the targets
+  particle_min_pt: 1.0
+  particle_max_abs_eta: 2.5
+  particle_min_num_hits: 3
+  event_max_num_particles: &num_objects 32
+
+  # Uncomment to train on the hit filter's output (week 7, exercise 3)
+  # hit_eval_train: logs/<filter run>/ckpts/<best>__train.h5
+  # hit_eval_val: logs/<filter run>/ckpts/<best>__val.h5
+  # hit_eval_test: logs/<filter run>/ckpts/<best>__test.h5
+  # hit_filter_threshold: 0.1
+
+  inputs:
+    hit: &hit_fields [x, y, z, r, eta, phi]
+  targets:
+    hit: [on_valid_particle, is_first]
+    particle: [pt, eta, phi]
+
+trainer:
+  max_epochs: 10
+  accelerator: auto
+  devices: 1
+  precision: 32-true # week 8: try bf16-mixed on your GPU
+  log_every_n_steps: 50
+  default_root_dir: logs
+  gradient_clip_val: 1.0
+  logger:
+    class_path: lightning.pytorch.loggers.CSVLogger
+    init_args:
+      save_dir: logs
+  callbacks:
+    - class_path: minihep.lightning.callbacks.SaveMetadata
+    - class_path: minihep.lightning.callbacks.Checkpoint
+      init_args:
+        monitor: val/loss
+    - class_path: minihep.lightning.callbacks.PredictionWriter
+      init_args:
+        write_targets: true
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+
+model:
+  optimizer: AdamW
+  lrs_config:
+    initial: 1e-4
+    max: 1e-3
+    end: 1e-5
+    pct_start: 0.05
+    weight_decay: 1e-5
+
+  model:
+    class_path: minihep.models.MaskFormer
+    init_args:
+      input_sort_field: phi
+      input_nets:
+        class_path: torch.nn.ModuleList
+        init_args:
+          modules:
+            - class_path: minihep.models.InputNet
+              init_args:
+                input_name: hit
+                fields: *hit_fields
+                net:
+                  class_path: minihep.models.Dense
+                  init_args:
+                    input_size: 6
+                    hidden_layers: [64]
+                    output_size: &dim 64
+                posenc:
+                  class_path: minihep.models.PositionEncoder
+                  init_args:
+                    input_name: hit
+                    fields: [r, eta, phi]
+                    sym_fields: [phi]
+                    dim: *dim
+                    alpha: 10
+
+      encoder:
+        class_path: minihep.models.Encoder
+        init_args:
+          num_layers: 2
+          dim: *dim
+          attn_type: torch # week 5: flex + window_size
+          attn_kwargs: {num_heads: 4}
+
+      # No class_path needed: the type hint is the concrete class MaskFormerDecoder,
+      # so jsonargparse knows what to build (hepattn's configs do the same).
+      decoder:
+        num_queries: *num_objects
+        dim: *dim
+        num_layers: 2
+        layer_kwargs:
+          attn_kwargs: {num_heads: 4}
+
+      tasks:
+        class_path: torch.nn.ModuleList
+        init_args:
+          modules:
+            - class_path: minihep.models.ObjectValidTask
+              init_args:
+                name: track_valid
+                input_object: query
+                output_object: track
+                target_object: particle
+                dim: *dim
+            - class_path: minihep.models.HitMaskTask
+              init_args:
+                name: track_hit_valid
+                input_constituent: hit
+                input_object: query
+                output_object: track
+                target_object: particle
+                dim: *dim
+                losses: {mask_dice: 2.0, mask_focal: 10.0}
+                costs: {mask_dice: 2.0, mask_focal: 10.0}

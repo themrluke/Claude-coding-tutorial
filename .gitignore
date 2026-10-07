@@ -1,0 +1,18 @@
+# pixi environments (pixi.lock IS committed)
+.pixi/
+# generated data and training output
+/data/
+/logs/
+/lightning_logs/
+*.ckpt
+*.h5
+# python / tools
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+# editors and OS
+.vscode/*
+!.vscode/settings.json
+.DS_Store

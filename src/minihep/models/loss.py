@@ -13,6 +13,8 @@ Always work with **logits** (raw scores) rather than probabilities: the
 step. ``log(sigmoid(x))`` computed naively becomes ``log(0) = -inf`` for x < -100 or so.
 """
 
+import functools
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -192,9 +194,27 @@ def mask_focal_loss(logits: Tensor, targets: Tensor, object_valid: Tensor, input
     # <<< week06
 
 
+def in_float32(cost_fn):
+    """Run a cost function in float32 even under ``torch.autocast`` (provided).
+
+    ``.float()`` on the inputs is not enough: autocast casts einsum's inputs back down to bf16/fp16,
+    and bf16's 8-bit mantissa can create ties or flip the matching. hepattn computes its costs inside
+    ``torch.autocast(device_type="cuda", enabled=False)`` for the same reason (week 8, ``autocast_dtypes``).
+    """
+
+    @functools.wraps(cost_fn)
+    def wrapper(*args: Tensor | None, **kwargs) -> Tensor:
+        device_type = next(a for a in args if isinstance(a, Tensor)).device.type
+        with torch.autocast(device_type=device_type, enabled=False):
+            args = tuple(a.float() if isinstance(a, Tensor) and a.is_floating_point() else a for a in args)
+            return cost_fn(*args, **kwargs)
+
+    return wrapper
+
+
 COST_FNS = {
-    "object_bce": object_bce_cost,
-    "mask_bce": mask_bce_cost,
-    "mask_focal": mask_focal_cost,
-    "mask_dice": mask_dice_cost,
+    "object_bce": in_float32(object_bce_cost),
+    "mask_bce": in_float32(mask_bce_cost),
+    "mask_focal": in_float32(mask_focal_cost),
+    "mask_dice": in_float32(mask_dice_cost),
 }
